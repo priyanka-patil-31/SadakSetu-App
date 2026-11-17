@@ -196,3 +196,94 @@ data class NotificationListDto(
 
 @Serializable
 data class DeviceTokenRequestDto(val platform: String, val token: String)
+
+@Serializable
+data class WorkOrderDto(
+    val id: String,
+    @SerialName("complaint_id") val complaintId: String,
+    @SerialName("team_id") val teamId: String,
+    @SerialName("assigned_by_id") val assignedById: String,
+    val status: String,
+    @SerialName("released_at") val releasedAt: String? = null,
+    @SerialName("created_at") val createdAt: String,
+    @SerialName("updated_at") val updatedAt: String,
+    @SerialName("work_order_number") val workOrderNumber: String? = null,
+    val priority: String? = null,
+    @SerialName("expected_completion_date") val expectedCompletionDate: String? = null,
+    val instructions: String? = null,
+    @SerialName("work_status") val workStatus: String,
+    @SerialName("progress_percentage") val progressPercentage: Int = 0,
+    @SerialName("progress_notes") val progressNotes: String? = null,
+    @SerialName("delay_reason") val delayReason: String? = null,
+    @SerialName("before_photos") val beforePhotos: List<String> = emptyList(),
+    @SerialName("after_photos") val afterPhotos: List<String> = emptyList(),
+    @SerialName("assigned_member_ids") val assignedMemberIds: List<String> = emptyList(),
+    @SerialName("completion_notes") val completionNotes: String? = null,
+    @SerialName("completion_submitted_at") val completionSubmittedAt: String? = null,
+    @SerialName("verified_at") val verifiedAt: String? = null,
+    @SerialName("verified_by_id") val verifiedById: String? = null,
+    @SerialName("reassign_reason") val reassignReason: String? = null,
+    @SerialName("team_name") val teamName: String? = null,
+    @SerialName("team_lead_name") val teamLeadName: String? = null,
+    @SerialName("team_phone") val teamPhone: String? = null,
+    @SerialName("complaint_number") val complaintNumber: String? = null,
+    @SerialName("complaint_title") val complaintTitle: String? = null,
+    @SerialName("complaint_description") val complaintDescription: String? = null,
+    @SerialName("complaint_status") val complaintStatus: String? = null,
+    @SerialName("complaint_severity") val complaintSeverity: String? = null,
+    @SerialName("complaint_address") val complaintAddress: String? = null,
+    @SerialName("complaint_latitude") val complaintLatitude: Double? = null,
+    @SerialName("complaint_longitude") val complaintLongitude: Double? = null,
+    @SerialName("complaint_photo_url") val complaintPhotoUrl: String? = null,
+)
+
+@Serializable
+data class OptionalNoteDto(
+    val note: String? = null,
+)
+
+@Serializable
+data class WorkOrderProgressDto(
+    @SerialName("progress_percentage") val progressPercentage: Int,
+    @SerialName("progress_notes") val progressNotes: String? = null,
+)
+
+@Serializable
+data class WorkOrderDelayDto(
+    @SerialName("delay_reason") val delayReason: String,
+)
+
+@Serializable
+data class WorkOrderMembersDto(
+    @SerialName("member_ids") val memberIds: List<String>,
+)
+
+@Serializable
+data class WorkOrderPhotoDto(
+    @SerialName("photo_type") val photoType: String,
+    @SerialName("photo_url") val photoUrl: String,
+)
+
+@Serializable
+data class WorkOrderCompletionDto(
+    @SerialName("completion_notes") val completionNotes: String? = null,
+)
+
+@Serializable
+data class TeamMemberDto(
+    val id: String,
+    @SerialName("team_id") val teamId: String,
+    val name: String,
+    @SerialName("employee_id") val employeeId: String,
+    val phone: String? = null,
+    val skills: List<String> = emptyList(),
+    @SerialName("is_active") val isActive: Boolean = true,
+)
+
+@Serializable
+data class TeamMemberCreateDto(
+    val name: String,
+    @SerialName("employee_id") val employeeId: String,
+    val phone: String? = null,
+    val skills: List<String> = emptyList(),
+)

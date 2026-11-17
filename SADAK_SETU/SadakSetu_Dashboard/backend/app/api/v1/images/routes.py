@@ -2,13 +2,13 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from fastapi.responses import FileResponse
-from sqlalchemy import select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session as DBSession
 
 from app.core.config import get_settings
 from app.database.dependencies import get_db
 from app.dependencies.auth import get_current_auth
-from app.models import Complaint, ComplaintImage, UserRole
+from app.models import Complaint, ComplaintImage, RepairTeam, UserRole
 from app.schemas.images import ComplaintImageResponse
 from app.services.auth import AuthenticatedSession, require_roles
 from app.storage.files import resolve_storage_path, store_validated_image
@@ -20,9 +20,22 @@ def visible_complaint(db: DBSession, auth: AuthenticatedSession, complaint_id: U
     complaint = db.get(Complaint, complaint_id)
     if complaint is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Complaint not found")
-    if auth.user.role != UserRole.ADMIN and complaint.reporter_id != auth.user.id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
-    return complaint
+    if auth.user.role == UserRole.ADMIN:
+        return complaint
+    if auth.user.role == UserRole.CITIZEN and complaint.reporter_id == auth.user.id:
+        return complaint
+    if auth.user.role == UserRole.REPAIR_TEAM:
+        team_ids = db.scalars(
+            select(RepairTeam.id).where(
+                or_(
+                    RepairTeam.lead_user_id == auth.user.id,
+                    func.lower(RepairTeam.email) == auth.user.email.strip().lower(),
+                )
+            )
+        ).all()
+        if complaint.assigned_team_id in team_ids:
+            return complaint
+    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
 
 
 @router.post("/{complaint_id}/images", response_model=ComplaintImageResponse, status_code=status.HTTP_201_CREATED)
@@ -31,7 +44,7 @@ async def upload_complaint_image(
     image: UploadFile = File(...),
     latitude: float | None = Form(default=None, ge=-90, le=90),
     longitude: float | None = Form(default=None, ge=-180, le=180),
-    auth: AuthenticatedSession = Depends(require_roles(UserRole.CITIZEN, UserRole.ADMIN)),
+    auth: AuthenticatedSession = Depends(require_roles(UserRole.CITIZEN, UserRole.ADMIN, UserRole.REPAIR_TEAM)),
     db: DBSession = Depends(get_db),
 ) -> ComplaintImage:
     if (latitude is None) != (longitude is None):

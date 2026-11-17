@@ -3,13 +3,13 @@ from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from geoalchemy2.elements import WKTElement
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session as DBSession
 from sqlalchemy.orm import joinedload
 
 from app.database.dependencies import get_db
 from app.dependencies.auth import get_current_auth
-from app.models import Complaint, ComplaintStatus, ComplaintUpdate, Location, SeverityLevel, User, UserRole
+from app.models import Complaint, ComplaintStatus, ComplaintUpdate, Location, RepairTeam, SeverityLevel, User, UserRole
 from app.schemas.complaints import (
     ComplaintCreate,
     ComplaintDeleteRequest,
@@ -32,11 +32,21 @@ def complaint_number() -> str:
     return f"SS-{datetime.now(UTC):%Y%m%d}-{uuid4().hex[:12].upper()}"
 
 
-def _visible_query(auth: AuthenticatedSession):
+def _visible_query(db: DBSession, auth: AuthenticatedSession):
     if auth.user.role == UserRole.ADMIN:
         return []
     if auth.user.role == UserRole.CITIZEN:
         return [Complaint.reporter_id == auth.user.id]
+    if auth.user.role == UserRole.REPAIR_TEAM:
+        team_ids = db.scalars(
+            select(RepairTeam.id).where(
+                or_(
+                    RepairTeam.lead_user_id == auth.user.id,
+                    func.lower(RepairTeam.email) == auth.user.email.strip().lower(),
+                )
+            )
+        ).all()
+        return [Complaint.assigned_team_id.in_(team_ids)]
     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Complaint access is not enabled for this role")
 
 
@@ -44,9 +54,22 @@ def _get_visible_complaint(db: DBSession, auth: AuthenticatedSession, complaint_
     complaint = db.execute(select(Complaint).options(joinedload(Complaint.location), joinedload(Complaint.reporter), joinedload(Complaint.images)).where(Complaint.id == complaint_id)).unique().scalar_one_or_none()
     if complaint is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Complaint not found")
-    if auth.user.role != UserRole.ADMIN and complaint.reporter_id != auth.user.id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
-    return complaint
+    if auth.user.role == UserRole.ADMIN:
+        return complaint
+    if auth.user.role == UserRole.CITIZEN and complaint.reporter_id == auth.user.id:
+        return complaint
+    if auth.user.role == UserRole.REPAIR_TEAM:
+        team_ids = db.scalars(
+            select(RepairTeam.id).where(
+                or_(
+                    RepairTeam.lead_user_id == auth.user.id,
+                    func.lower(RepairTeam.email) == auth.user.email.strip().lower(),
+                )
+            )
+        ).all()
+        if complaint.assigned_team_id in team_ids:
+            return complaint
+    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
 
 
 @router.post("", response_model=ComplaintResponse, status_code=status.HTTP_201_CREATED)
@@ -111,7 +134,7 @@ def list_complaints(
     severity: str | None = Query(default=None),
     area: str | None = Query(default=None, max_length=160),
 ) -> ComplaintListResponse:
-    filters = _visible_query(auth)
+    filters = _visible_query(db, auth)
     if complaint_status is not None:
         filters.append(Complaint.status == complaint_status)
     if severity is not None:

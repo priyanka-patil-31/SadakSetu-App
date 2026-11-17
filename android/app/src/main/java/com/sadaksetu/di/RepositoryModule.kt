@@ -4,8 +4,10 @@ import com.sadaksetu.core.database.SadakSetuDatabase
 import com.sadaksetu.data.remote.ApiService
 import com.sadaksetu.data.repository.AuthRepositoryImpl
 import com.sadaksetu.data.repository.ComplaintRepositoryImpl
+import com.sadaksetu.data.repository.WorkOrderRepositoryImpl
 import com.sadaksetu.domain.repositories.AuthRepository
 import com.sadaksetu.domain.repositories.ComplaintRepository
+import com.sadaksetu.domain.repositories.WorkOrderRepository
 import dagger.Binds
 import dagger.Module
 import dagger.Provides
@@ -23,6 +25,10 @@ abstract class RepositoryModule {
     @Binds
     @Singleton
     abstract fun bindComplaintRepository(implementation: ComplaintRepositoryImpl): ComplaintRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindWorkOrderRepository(implementation: WorkOrderRepositoryImpl): WorkOrderRepository
 
     companion object {
         @Provides

@@ -12,6 +12,8 @@ export type RepairTeam = {
   specialties: string[]
   assignedComplaints: string[]
   updatedAt: string
+  hasAccount?: boolean
+  leadUserId?: string | null
 }
 
 export type TeamMember = {
@@ -23,4 +25,3 @@ export type TeamMember = {
   skills: string[]
   isActive: boolean
 }
-

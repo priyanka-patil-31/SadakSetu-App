@@ -228,6 +228,7 @@ def update_user_role(
 
 
 @router.delete('/{user_id}', response_model=dict[str, str])
+@router.delete('/{user_id}/', response_model=dict[str, str], include_in_schema=False)
 def delete_user(
     user_id: UUID,
     auth: AuthenticatedSession = Depends(require_roles(UserRole.ADMIN)),

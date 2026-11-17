@@ -69,11 +69,17 @@ fun SadakSetuApp(authViewModel: AuthViewModel = hiltViewModel()) {
         AuthState.Loading -> SplashScreen()
         AuthState.SignedOut -> AuthScreen(authViewModel)
         is AuthState.Authenticated -> {
-            val navController = rememberNavController()
-            val navBackStackEntry by navController.currentBackStackEntryAsState()
-            val currentRoute = navBackStackEntry?.destination?.route
+            if (state.user.role.equals("REPAIR_TEAM", ignoreCase = true)) {
+                com.sadaksetu.presentation.leader.TeamLeaderApp(
+                    user = state.user,
+                    onSignOut = { authViewModel.logout() },
+                )
+            } else {
+                val navController = rememberNavController()
+                val navBackStackEntry by navController.currentBackStackEntryAsState()
+                val currentRoute = navBackStackEntry?.destination?.route
 
-            var pendingAiImageUri by remember { mutableStateOf<Uri?>(null) }
+                var pendingAiImageUri by remember { mutableStateOf<Uri?>(null) }
 
             val bottomNavItems = listOf(
                 BottomNavItem(
@@ -276,6 +282,7 @@ fun SadakSetuApp(authViewModel: AuthViewModel = hiltViewModel()) {
                         )
                     }
                 }
+            }
             }
         }
     }

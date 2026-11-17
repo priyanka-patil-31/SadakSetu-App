@@ -47,7 +47,7 @@ class TeamAvailabilityUpdate(BaseModel):
 
 
 class TeamResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True, extra="ignore")
 
     id: UUID
     name: str
@@ -58,6 +58,8 @@ class TeamResponse(BaseModel):
     members: int
     specialties: list[str]
     availability: TeamAvailability
+    lead_user_id: UUID | None = None
+    has_account: bool = False
     is_active: bool
     created_at: datetime
     updated_at: datetime
@@ -95,3 +97,68 @@ class TeamAssignmentResponse(BaseModel):
     released_at: datetime | None
     created_at: datetime
     updated_at: datetime
+
+
+class TeamMemberCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(min_length=2, max_length=160)
+    employee_id: str = Field(min_length=1, max_length=80)
+    phone: str | None = Field(default=None, min_length=10, max_length=10, pattern=r"^\d{10}$")
+    skills: list[str] = Field(default_factory=list, max_length=30)
+
+
+class TeamMemberUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str | None = Field(default=None, min_length=2, max_length=160)
+    employee_id: str | None = Field(default=None, min_length=1, max_length=80)
+    phone: str | None = Field(default=None, min_length=10, max_length=10, pattern=r"^\d{10}$")
+    skills: list[str] | None = Field(default=None, max_length=30)
+    is_active: bool | None = None
+
+
+class TeamMemberResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    team_id: UUID
+    name: str
+    employee_id: str
+    phone: str | None
+    skills: list[str]
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+class TeamLeaderCreate(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    full_name: str = Field(min_length=2, max_length=160)
+    email: str = Field(min_length=5, max_length=320)
+    phone: str = Field(min_length=10, max_length=15)
+    password: str = Field(min_length=6, max_length=128)
+
+
+class TeamLeaderAssign(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    user_id: UUID
+
+
+class AvailableLeaderResponse(BaseModel):
+    id: UUID
+    email: str
+    full_name: str
+    phone: str | None
+    is_active: bool
+
+
+class TeamWorkStatsResponse(BaseModel):
+    team_id: UUID
+    team_name: str
+    active_assignments: int = 0
+    completed_assignments: int = 0
+    delayed_assignments: int = 0
+    pending_assignments: int = 0

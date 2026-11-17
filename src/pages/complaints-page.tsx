@@ -1,32 +1,38 @@
 import { useEffect, useMemo, useState } from "react";
 import {
+  AlertTriangle,
+  Calendar,
   Check,
+  CheckCircle2,
   ChevronLeft,
   ChevronRight,
   Clock3,
   Compass,
   Copy,
   Download,
+  FileText,
   Filter,
+  HardHat,
   Home,
   Loader2,
   MapPin,
   MessageSquare,
   Navigation,
   Printer,
+  RefreshCw,
   Route,
   Search,
+  ShieldAlert,
   Trash2,
   UserRound,
   X,
 } from "lucide-react";
 import { downloadCsv, printTableReport } from "@/lib/export-utils";
 import { Link } from "react-router-dom";
-import { CircleMarker, MapContainer, Popup, useMap } from "react-leaflet";
+import { CircleMarker, MapContainer, Popup, TileLayer, useMap } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 
 import { PageHeader } from "@/components/page-header";
-import { OfflineMapSurface } from "@/components/offline-map-surface";
 import { StatusBadge } from "@/components/status-badge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -44,6 +50,12 @@ import {
   complaintService,
   type ComplaintEvidence,
 } from "@/services/complaints-service";
+import {
+  assignmentsService,
+  type WorkOrder,
+} from "@/services/assignments-service";
+import { teamsService } from "@/services/teams-service";
+import type { RepairTeam } from "@/lib/teams-data";
 import {
   complaintStatusLabels,
   validComplaintTransitions,
@@ -152,6 +164,30 @@ export function ComplaintsPage() {
   const [deleting, setDeleting] = useState(false);
   const [copiedCoords, setCopiedCoords] = useState(false);
   const [downloadPriority, setDownloadPriority] = useState<string>("ALL");
+
+  // Work Order Assignment States
+  const [activeAssignment, setActiveAssignment] = useState<WorkOrder | null>(null);
+  const [assignmentLoading, setAssignmentLoading] = useState(false);
+  const [assignModalOpen, setAssignModalOpen] = useState(false);
+  const [reassignModalOpen, setReassignModalOpen] = useState(false);
+  const [availableTeams, setAvailableTeams] = useState<RepairTeam[]>([]);
+
+  // Assign Form
+  const [assignTeamId, setAssignTeamId] = useState("");
+  const [assignPriority, setAssignPriority] = useState<string>("HIGH");
+  const [assignDeadline, setAssignDeadline] = useState("");
+  const [assignInstructions, setAssignInstructions] = useState("");
+  const [assignSubmitting, setAssignSubmitting] = useState(false);
+  const [assignError, setAssignError] = useState("");
+
+  // Reassign Form
+  const [reassignTeamId, setReassignTeamId] = useState("");
+  const [reassignReason, setReassignReason] = useState("");
+  const [reassignPriority, setReassignPriority] = useState<string>("HIGH");
+  const [reassignDeadline, setReassignDeadline] = useState("");
+  const [reassignInstructions, setReassignInstructions] = useState("");
+  const [reassignSubmitting, setReassignSubmitting] = useState(false);
+  const [reassignError, setReassignError] = useState("");
 
   const handleExportCsv = (priorityToExport?: string) => {
     const targetPriority = priorityToExport || downloadPriority;
@@ -311,6 +347,8 @@ export function ComplaintsPage() {
     setCopiedCoords(false);
     setCopiedAddress(false);
     setEvidenceLoading(true);
+    setActiveAssignment(null);
+    setAssignmentLoading(true);
 
     const initialAddr = isMeaningfulAddress(complaint.address)
       ? complaint.address!
@@ -340,6 +378,16 @@ export function ComplaintsPage() {
       .then(setEvidence)
       .catch(() => setEvidence([]))
       .finally(() => setEvidenceLoading(false));
+
+    // Fetch active assignment linked to this complaint
+    assignmentsService
+      .getComplaintAssignments(complaint.backendId)
+      .then((items) => {
+        const active = items.find((i) => i.status === "ACTIVE") || null;
+        setActiveAssignment(active);
+      })
+      .catch(() => setActiveAssignment(null))
+      .finally(() => setAssignmentLoading(false));
   };
 
   const closeDetails = () => {
@@ -347,6 +395,116 @@ export function ComplaintsPage() {
     setPendingStatus(null);
     setNote("");
     setDeleteConfirmOpen(false);
+    setActiveAssignment(null);
+    setAssignModalOpen(false);
+    setReassignModalOpen(false);
+  };
+
+  const openAssignModal = async () => {
+    if (!selected) return;
+    setAssignError("");
+    setAssignInstructions("");
+    // Default deadline to 3 days from now
+    const d = new Date();
+    d.setDate(d.getDate() + 3);
+    setAssignDeadline(d.toISOString().slice(0, 16));
+    setAssignPriority(selected.priority.toUpperCase());
+    try {
+      const list = await teamsService.list();
+      setAvailableTeams(list);
+      if (list.length > 0) {
+        setAssignTeamId(list[0].id);
+      }
+    } catch {
+      setAvailableTeams([]);
+    }
+    setAssignModalOpen(true);
+  };
+
+  const handleAssignSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selected || !assignTeamId) {
+      setAssignError("Please select a repair team.");
+      return;
+    }
+    setAssignSubmitting(true);
+    setAssignError("");
+    try {
+      const result = await assignmentsService.assignComplaint(selected.backendId, {
+        team_id: assignTeamId,
+        priority: assignPriority,
+        expected_completion_date: assignDeadline ? new Date(assignDeadline).toISOString() : undefined,
+        instructions: assignInstructions.trim() || undefined,
+      });
+      setActiveAssignment(result);
+      setAssignModalOpen(false);
+      // Reload complaints list to reflect changes
+      const updatedList = await complaintService.list({ page: 1, pageSize: 100 });
+      setComplaints(updatedList.items);
+      const updatedSelected = updatedList.items.find((c) => c.backendId === selected.backendId);
+      if (updatedSelected) {
+        setSelected(updatedSelected);
+      }
+    } catch (err) {
+      setAssignError(err instanceof Error ? err.message : "Failed to assign work order");
+    } finally {
+      setAssignSubmitting(false);
+    }
+  };
+
+  const openReassignModal = async () => {
+    if (!selected || !activeAssignment) return;
+    setReassignError("");
+    setReassignReason("");
+    setReassignInstructions(activeAssignment.instructions || "");
+    setReassignPriority(activeAssignment.priority || "HIGH");
+    if (activeAssignment.expectedCompletionDate) {
+      setReassignDeadline(new Date(activeAssignment.expectedCompletionDate).toISOString().slice(0, 16));
+    } else {
+      const d = new Date();
+      d.setDate(d.getDate() + 3);
+      setReassignDeadline(d.toISOString().slice(0, 16));
+    }
+    try {
+      const list = await teamsService.list();
+      setAvailableTeams(list);
+      const otherTeam = list.find((t) => t.id !== activeAssignment.teamId) || list[0];
+      if (otherTeam) setReassignTeamId(otherTeam.id);
+    } catch {
+      setAvailableTeams([]);
+    }
+    setReassignModalOpen(true);
+  };
+
+  const handleReassignSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selected || !reassignTeamId) {
+      setReassignError("Please select a new repair team.");
+      return;
+    }
+    if (!reassignReason.trim()) {
+      setReassignError("A reason for reassignment is mandatory.");
+      return;
+    }
+    setReassignSubmitting(true);
+    setReassignError("");
+    try {
+      const result = await assignmentsService.reassignWorkOrder(selected.backendId, {
+        team_id: reassignTeamId,
+        reason: reassignReason.trim(),
+        priority: reassignPriority,
+        expected_completion_date: reassignDeadline ? new Date(reassignDeadline).toISOString() : undefined,
+        instructions: reassignInstructions.trim() || undefined,
+      });
+      setActiveAssignment(result);
+      setReassignModalOpen(false);
+      const updatedList = await complaintService.list({ page: 1, pageSize: 100 });
+      setComplaints(updatedList.items);
+    } catch (err) {
+      setReassignError(err instanceof Error ? err.message : "Failed to reassign work order");
+    } finally {
+      setReassignSubmitting(false);
+    }
   };
 
   const canDeleteSelected = selected
@@ -629,7 +787,9 @@ export function ComplaintsPage() {
                             className="group relative flex h-11 w-16 shrink-0 overflow-hidden rounded-lg border border-slate-200 bg-slate-100 shadow-2xs hover:border-orange-300 transition-all cursor-pointer"
                             title={`Inspect location on map for ${complaint.location}`}
                           >
-                            <div className="offline-map-surface relative h-full w-full">
+                            <div className="relative h-full w-full bg-slate-200">
+                              <div className="absolute left-1/2 top-0 h-full w-1 -translate-x-1/2 rotate-12 bg-white/80" />
+                              <div className="absolute left-0 top-1/2 h-1 w-full -rotate-6 bg-white/80" />
                               <span className="absolute inset-0 m-auto h-3 w-3 rounded-full border-2 border-white bg-orange-500 shadow" />
                               <span className="absolute bottom-0.5 left-1 right-1 rounded bg-slate-900/70 px-0.5 text-center text-[7px] font-bold text-white">LOCAL GPS</span>
                             </div>
@@ -677,14 +837,30 @@ export function ComplaintsPage() {
                       <TableCell className="whitespace-nowrap text-sm text-slate-600">
                         {formatDate(complaint.reportedAt)}
                       </TableCell>
-                      <TableCell className="text-right">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => openDetails(complaint)}
-                        >
-                          View details
-                        </Button>
+                      <TableCell className="text-right whitespace-nowrap">
+                        <div className="flex items-center justify-end gap-1.5">
+                          {complaint.backendStatus !== "RESOLVED" && complaint.backendStatus !== "REJECTED" && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="gap-1 border-orange-200 text-orange-600 hover:bg-orange-50 hover:text-orange-700 text-xs"
+                              onClick={() => {
+                                openDetails(complaint);
+                                setTimeout(openAssignModal, 150);
+                              }}
+                            >
+                              <HardHat className="h-3.5 w-3.5" />
+                              Assign
+                            </Button>
+                          )}
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => openDetails(complaint)}
+                          >
+                            View details
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   );
@@ -726,7 +902,7 @@ export function ComplaintsPage() {
                       onClick={() => openDetails(complaint)}
                       className="group relative flex h-12 w-16 shrink-0 overflow-hidden rounded-lg border border-slate-200 bg-slate-100 shadow-2xs"
                     >
-                      <div className="offline-map-surface relative h-full w-full">
+                      <div className="relative h-full w-full bg-slate-200">
                         <span className="absolute inset-0 m-auto h-3 w-3 rounded-full border-2 border-white bg-orange-500 shadow" />
                       </div>
                       <div className="absolute inset-0 flex items-center justify-center">
@@ -836,6 +1012,151 @@ export function ComplaintsPage() {
                     <PriorityBadge priority={selected.priority} />
                   </div>
                 </div>
+              </div>
+
+              {/* Work Order Assignment / Management Section */}
+              <div className="space-y-3">
+                {assignmentLoading ? (
+                  <div className="flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-slate-50 p-4 text-xs text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin text-orange-500" />
+                    <span>Loading work order assignment…</span>
+                  </div>
+                ) : activeAssignment ? (
+                  <div className="rounded-xl border border-orange-200 bg-gradient-to-br from-orange-50/50 via-white to-slate-50 p-4 space-y-3.5 shadow-2xs">
+                    <div className="flex items-center justify-between border-b border-orange-100 pb-2.5">
+                      <div className="flex items-center gap-2">
+                        <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-orange-500 text-white shadow-xs">
+                          <HardHat className="h-4 w-4" />
+                        </div>
+                        <div>
+                          <p className="font-mono text-xs font-bold text-slate-900">
+                            {activeAssignment.workOrderNumber}
+                          </p>
+                          <p className="text-[10px] text-muted-foreground">Active Work Order</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Badge
+                          variant="outline"
+                          className={`text-[10px] font-bold ${
+                            activeAssignment.workStatus === "COMPLETED"
+                              ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                              : activeAssignment.workStatus === "COMPLETION_SUBMITTED"
+                              ? "border-amber-200 bg-amber-50 text-amber-700 animate-pulse"
+                              : activeAssignment.workStatus === "DELAYED"
+                              ? "border-red-200 bg-red-50 text-red-700"
+                              : activeAssignment.workStatus === "IN_PROGRESS"
+                              ? "border-sky-200 bg-sky-50 text-sky-700"
+                              : "border-slate-200 bg-white text-slate-700"
+                          }`}
+                        >
+                          {activeAssignment.workStatus.replace("_", " ")}
+                        </Badge>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-7 gap-1 px-2 text-xs font-semibold text-orange-700 border-orange-200 hover:bg-orange-50"
+                          onClick={openReassignModal}
+                        >
+                          <RefreshCw className="h-3 w-3" />
+                          Reassign
+                        </Button>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div className="rounded-lg bg-white p-2.5 border border-slate-200/80">
+                        <span className="text-[10px] uppercase font-bold text-slate-400 block">
+                          Assigned Team
+                        </span>
+                        <p className="font-semibold text-slate-900 truncate">
+                          {activeAssignment.teamName}
+                        </p>
+                        <p className="text-[11px] text-muted-foreground truncate">
+                          Lead: {activeAssignment.teamLeadName}
+                        </p>
+                      </div>
+                      <div className="rounded-lg bg-white p-2.5 border border-slate-200/80">
+                        <span className="text-[10px] uppercase font-bold text-slate-400 block">
+                          Target Deadline
+                        </span>
+                        <p className="font-semibold text-slate-900 truncate">
+                          {activeAssignment.expectedCompletionDate
+                            ? new Date(activeAssignment.expectedCompletionDate).toLocaleString("en-IN", {
+                                dateStyle: "medium",
+                                timeStyle: "short",
+                              })
+                            : "No target set"}
+                        </p>
+                        <p className="text-[11px] text-muted-foreground">
+                          Priority: {activeAssignment.priority}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Progress tracking */}
+                    <div className="space-y-1.5 rounded-lg bg-white p-2.5 border border-slate-200/80">
+                      <div className="flex items-center justify-between text-xs font-semibold text-slate-700">
+                        <span>Repair Progress</span>
+                        <span className="font-bold text-orange-600">
+                          {activeAssignment.progressPercentage}%
+                        </span>
+                      </div>
+                      <div className="h-2 w-full rounded-full bg-slate-100 overflow-hidden border border-slate-200/60">
+                        <div
+                          className="h-full bg-gradient-to-r from-orange-500 to-emerald-500 transition-all duration-300"
+                          style={{
+                            width: `${Math.min(100, Math.max(0, activeAssignment.progressPercentage))}%`,
+                          }}
+                        />
+                      </div>
+                      {activeAssignment.progressNotes && (
+                        <p className="mt-1 text-xs text-slate-600 italic">
+                          “{activeAssignment.progressNotes}”
+                        </p>
+                      )}
+                    </div>
+
+                    {activeAssignment.delayReason && (
+                      <div className="rounded-lg border border-red-200 bg-red-50 p-2.5 text-xs text-red-800 flex items-start gap-2">
+                        <AlertTriangle className="h-4 w-4 text-red-600 shrink-0 mt-0.5" />
+                        <div>
+                          <span className="font-bold">Delay Reported by Crew:</span>
+                          <p className="mt-0.5 text-red-700">{activeAssignment.delayReason}</p>
+                        </div>
+                      </div>
+                    )}
+
+                    {activeAssignment.instructions && (
+                      <div className="rounded-lg bg-white p-2.5 border border-slate-200/80 text-xs">
+                        <span className="font-bold text-slate-500 block mb-0.5 uppercase text-[10px]">
+                          Repair Instructions:
+                        </span>
+                        <p className="text-slate-700 leading-relaxed">{activeAssignment.instructions}</p>
+                      </div>
+                    )}
+                  </div>
+                ) : selected.backendStatus !== "RESOLVED" && selected.backendStatus !== "REJECTED" ? (
+                  <div className="rounded-xl border border-dashed border-orange-300 bg-orange-50/40 p-4 flex items-center justify-between gap-3 shadow-2xs">
+                    <div className="space-y-0.5">
+                      <p className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                        <HardHat className="h-4 w-4 text-orange-600" />
+                        No Repair Team Assigned
+                      </p>
+                      <p className="text-[11px] text-muted-foreground leading-normal">
+                        Create a linked work order and dispatch this issue to an available crew.
+                      </p>
+                    </div>
+                    <Button
+                      size="sm"
+                      onClick={openAssignModal}
+                      className="gap-1.5 bg-orange-500 hover:bg-orange-600 text-white font-semibold text-xs shrink-0 shadow-xs"
+                    >
+                      <HardHat className="h-3.5 w-3.5" />
+                      Assign Work
+                    </Button>
+                  </div>
+                ) : null}
               </div>
 
               {/* Physical Street Address & Location Details Card */}
@@ -986,11 +1307,16 @@ export function ComplaintsPage() {
                     <MapContainer
                       center={selected.coordinates}
                       zoom={14}
+                      preferCanvas
                       scrollWheelZoom={false}
                       className="h-full w-full"
                       style={{ height: "100%", width: "100%" }}
                     >
-                      <OfflineMapSurface />
+                      <TileLayer
+                        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                        maxZoom={19}
+                      />
                       <DetailMapResizer center={selected.coordinates} />
                       <CircleMarker
                         center={selected.coordinates}
@@ -1041,7 +1367,7 @@ export function ComplaintsPage() {
                   {hasValidCoordinates(selected) && (
                     <div className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-teal-200 bg-teal-50 px-3 py-2 text-center text-xs font-bold text-teal-800">
                       <MapPin className="h-3.5 w-3.5 text-teal-600" />
-                      <span>Offline map · {selected.coordinates[0].toFixed(5)}, {selected.coordinates[1].toFixed(5)}</span>
+                      <span>GPS · {selected.coordinates[0].toFixed(5)}, {selected.coordinates[1].toFixed(5)}</span>
                     </div>
                   )}
                 </div>
@@ -1248,6 +1574,281 @@ export function ComplaintsPage() {
               )}
             </div>
           </aside>
+        </div>
+      )}
+
+      {/* Assign Work Order Modal */}
+      {assignModalOpen && selected && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4"
+          onClick={() => setAssignModalOpen(false)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Assign Work Order"
+            className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between border-b pb-4">
+              <div className="flex items-center gap-2.5">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-orange-100 text-orange-600">
+                  <HardHat className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900">Assign Work Order</h3>
+                  <p className="text-xs text-muted-foreground">
+                    Link {selected.id} to a field repair crew
+                  </p>
+                </div>
+              </div>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setAssignModalOpen(false)}
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+
+            <form onSubmit={handleAssignSubmit} className="space-y-4">
+              <div>
+                <label className="text-xs font-bold uppercase tracking-wider text-slate-700 block mb-1.5">
+                  Select Repair Team & Leader *
+                </label>
+                <select
+                  value={assignTeamId}
+                  onChange={(e) => setAssignTeamId(e.target.value)}
+                  className="h-10 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-orange-500"
+                  required
+                >
+                  {availableTeams.length === 0 ? (
+                    <option value="">No teams found</option>
+                  ) : (
+                    availableTeams.map((team) => (
+                      <option key={team.id} value={team.id}>
+                        {team.name} ({team.zone}) — Lead: {team.lead} [{team.assignedComplaints.length} active jobs]
+                      </option>
+                    ))
+                  )}
+                </select>
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                  Shows crew name, zone, leader, and current active workload.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-bold uppercase tracking-wider text-slate-700 block mb-1.5">
+                    Priority
+                  </label>
+                  <select
+                    value={assignPriority}
+                    onChange={(e) => setAssignPriority(e.target.value)}
+                    className="h-10 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-orange-500"
+                  >
+                    <option value="CRITICAL">Critical</option>
+                    <option value="HIGH">High</option>
+                    <option value="MEDIUM">Medium</option>
+                    <option value="LOW">Low</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold uppercase tracking-wider text-slate-700 block mb-1.5">
+                    Expected Completion
+                  </label>
+                  <Input
+                    type="datetime-local"
+                    value={assignDeadline}
+                    onChange={(e) => setAssignDeadline(e.target.value)}
+                    className="text-xs"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-bold uppercase tracking-wider text-slate-700 block mb-1.5">
+                  Repair Instructions
+                </label>
+                <textarea
+                  value={assignInstructions}
+                  onChange={(e) => setAssignInstructions(e.target.value)}
+                  placeholder="e.g. Clean debris, apply hot asphalt sealant, ensure traffic caution cones are set..."
+                  className="min-h-20 w-full rounded-lg border border-input bg-background p-2.5 text-xs outline-none focus:ring-2 focus:ring-orange-500"
+                />
+              </div>
+
+              {assignError && (
+                <div className="rounded-lg bg-red-50 p-2.5 text-xs font-medium text-red-700">
+                  {assignError}
+                </div>
+              )}
+
+              <div className="flex justify-end gap-2 pt-2 border-t">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setAssignModalOpen(false)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={assignSubmitting || !assignTeamId}
+                  className="bg-orange-500 hover:bg-orange-600 gap-1.5 text-white"
+                >
+                  <CheckCircle2 className="h-4 w-4" />
+                  {assignSubmitting ? "Assigning…" : "Confirm Assignment"}
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Reassign Work Order Modal */}
+      {reassignModalOpen && selected && activeAssignment && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4"
+          onClick={() => setReassignModalOpen(false)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Reassign Work Order"
+            className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between border-b pb-4">
+              <div className="flex items-center gap-2.5">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-orange-100 text-orange-600">
+                  <RefreshCw className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900">Reassign Work Order</h3>
+                  <p className="text-xs text-muted-foreground">
+                    Transfer {activeAssignment.workOrderNumber} to another crew
+                  </p>
+                </div>
+              </div>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setReassignModalOpen(false)}
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+
+            <form onSubmit={handleReassignSubmit} className="space-y-4">
+              <div className="rounded-lg bg-slate-50 p-3 text-xs border border-slate-200">
+                <span className="text-[10px] uppercase font-bold text-slate-400 block">
+                  Currently Assigned To
+                </span>
+                <p className="font-semibold text-slate-800">
+                  {activeAssignment.teamName} · Lead: {activeAssignment.teamLeadName}
+                </p>
+              </div>
+
+              <div>
+                <label className="text-xs font-bold uppercase tracking-wider text-slate-700 block mb-1.5">
+                  Select New Repair Team *
+                </label>
+                <select
+                  value={reassignTeamId}
+                  onChange={(e) => setReassignTeamId(e.target.value)}
+                  className="h-10 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-orange-500"
+                  required
+                >
+                  {availableTeams.map((team) => (
+                    <option key={team.id} value={team.id}>
+                      {team.name} ({team.zone}) — Lead: {team.lead} [{team.assignedComplaints.length} active jobs]
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="text-xs font-bold uppercase tracking-wider text-slate-700 block mb-1.5">
+                  Reason for Reassignment *
+                </label>
+                <textarea
+                  value={reassignReason}
+                  onChange={(e) => setReassignReason(e.target.value)}
+                  placeholder="Explain why this work order is being transferred (e.g. crew overload, equipment breakdown, zone redistribution)..."
+                  className="min-h-20 w-full rounded-lg border border-input bg-background p-2.5 text-xs outline-none focus:ring-2 focus:ring-orange-500"
+                  required
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-bold uppercase tracking-wider text-slate-700 block mb-1.5">
+                    Priority
+                  </label>
+                  <select
+                    value={reassignPriority}
+                    onChange={(e) => setReassignPriority(e.target.value)}
+                    className="h-10 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-orange-500"
+                  >
+                    <option value="CRITICAL">Critical</option>
+                    <option value="HIGH">High</option>
+                    <option value="MEDIUM">Medium</option>
+                    <option value="LOW">Low</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold uppercase tracking-wider text-slate-700 block mb-1.5">
+                    Expected Completion
+                  </label>
+                  <Input
+                    type="datetime-local"
+                    value={reassignDeadline}
+                    onChange={(e) => setReassignDeadline(e.target.value)}
+                    className="text-xs"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-bold uppercase tracking-wider text-slate-700 block mb-1.5">
+                  Updated Repair Instructions
+                </label>
+                <textarea
+                  value={reassignInstructions}
+                  onChange={(e) => setReassignInstructions(e.target.value)}
+                  placeholder="Additional instructions for the new crew..."
+                  className="min-h-16 w-full rounded-lg border border-input bg-background p-2.5 text-xs outline-none focus:ring-2 focus:ring-orange-500"
+                />
+              </div>
+
+              {reassignError && (
+                <div className="rounded-lg bg-red-50 p-2.5 text-xs font-medium text-red-700">
+                  {reassignError}
+                </div>
+              )}
+
+              <div className="flex justify-end gap-2 pt-2 border-t">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setReassignModalOpen(false)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={reassignSubmitting || !reassignTeamId || !reassignReason.trim()}
+                  className="bg-orange-500 hover:bg-orange-600 gap-1.5 text-white"
+                >
+                  <RefreshCw className="h-4 w-4" />
+                  {reassignSubmitting ? "Reassigning…" : "Confirm Reassignment"}
+                </Button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
     </div>

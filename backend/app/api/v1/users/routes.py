@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session as DBSession
 from app.core.security import hash_password, verify_password
 from app.database.dependencies import get_db
 from app.dependencies.auth import get_current_auth
-from app.models import Complaint, Session, User, UserRole
+from app.models import Complaint, Notification, Session, User, UserRole
 from app.schemas.users import (
     PasswordUpdateRequest,
     UserListResponse,
@@ -176,27 +176,44 @@ def get_user(
 
 
 @router.delete("/{user_id}", response_model=dict[str, str])
+@router.delete("/{user_id}/", response_model=dict[str, str], include_in_schema=False)
 def delete_user(
     user_id: UUID,
     auth: AuthenticatedSession = Depends(require_roles(UserRole.ADMIN)),
     db: DBSession = Depends(get_db),
 ) -> dict[str, str]:
+    if auth.user.id == user_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="You cannot delete your own administrator account",
+        )
     user = db.get(User, user_id)
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-    if user.id == auth.user.id:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="The current administrator cannot delete their own account")
     if user.role == UserRole.ADMIN:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Administrator accounts cannot be deleted from Citizen Management")
-    complaint_count = db.scalar(select(func.count()).select_from(Complaint).where(Complaint.reporter_id == user.id)) or 0
-    if complaint_count:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This citizen has submitted complaints; deactivate the account instead")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Administrator accounts cannot be deleted from Citizen Management",
+        )
+
+    for notification in db.scalars(select(Notification).where(Notification.user_id == user.id)).all():
+        db.delete(notification)
+
+    for session_obj in db.scalars(select(Session).where(Session.user_id == user.id)).all():
+        db.delete(session_obj)
+
+    for complaint in db.scalars(select(Complaint).where(Complaint.reporter_id == user.id)).all():
+        db.delete(complaint)
+
     db.delete(user)
     try:
         db.commit()
     except IntegrityError as exc:
         db.rollback()
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This account is referenced by existing records; deactivate it instead") from exc
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This account is referenced by existing records; deactivate it instead",
+        ) from exc
     return {"message": "User deleted"}
 
 

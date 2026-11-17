@@ -10,8 +10,10 @@ import {
   YAxis,
 } from 'recharts'
 import {
+  ChevronRight,
   Clock,
   FileSpreadsheet,
+  HardHat,
   MapPin,
   MoreVertical,
   Printer,
@@ -21,12 +23,24 @@ import {
 } from 'lucide-react'
 import type { Complaint } from '@/lib/complaints-data'
 import { complaintService } from '@/services/complaints-service'
-import { formatDate } from '@/lib/utils'
+import {
+  assignmentsService,
+  type WorkMonitoringStats,
+} from '@/services/assignments-service'
+import { cn, formatDate } from '@/lib/utils'
 import { downloadCsv, printTableReport } from '@/lib/export-utils'
 
 export function DashboardPage() {
   const [complaints, setComplaints] = useState<Complaint[]>([])
   const [dateRange, setDateRange] = useState('Feb 01 - Feb 14')
+  const [workStats, setWorkStats] = useState<WorkMonitoringStats>({
+    total: 0,
+    pending: 0,
+    ongoing: 0,
+    delayed: 0,
+    completion_submitted: 0,
+    completed: 0,
+  })
 
   useEffect(() => {
     let active = true
@@ -38,6 +52,14 @@ export function DashboardPage() {
       .catch(() => {
         if (active) setComplaints([])
       })
+
+    assignmentsService
+      .getStats()
+      .then((s) => {
+        if (active) setWorkStats(s)
+      })
+      .catch(() => {})
+
     return () => {
       active = false
     }
@@ -330,6 +352,72 @@ export function DashboardPage() {
                 <span className="text-xs font-semibold text-slate-400">of 5</span>
               </div>
             </div>
+          </div>
+        </div>
+      </div>
+
+      {/* WORK ASSIGNMENT & FIELD MONITORING EXECUTIVE STATS */}
+      <div className="rounded-2xl border border-orange-200/90 bg-gradient-to-r from-orange-50/50 via-white to-slate-50 p-6 shadow-sm">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between pb-4 border-b border-orange-100">
+          <div>
+            <div className="flex items-center gap-2">
+              <HardHat className="h-5 w-5 text-orange-600" />
+              <h2 className="text-base font-bold tracking-tight text-slate-900">
+                Work Orders & Field Repair Operations
+              </h2>
+            </div>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Live crew dispatching, active repair jobs, and field quality verification audits.
+            </p>
+          </div>
+
+          <Link
+            to="/teams?tab=monitoring"
+            className="inline-flex items-center gap-1.5 rounded-xl border border-orange-200 bg-white px-3.5 py-1.5 text-xs font-bold text-orange-700 shadow-2xs hover:bg-orange-50 transition"
+          >
+            <span>Open Field Work Monitoring</span>
+            <ChevronRight className="h-3.5 w-3.5" />
+          </Link>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4 pt-4 sm:grid-cols-3 lg:grid-cols-6">
+          <div className="rounded-xl border border-slate-200/80 bg-white p-3.5 shadow-2xs">
+            <span className="text-[10px] uppercase font-bold text-slate-400 block">Total Work Orders</span>
+            <p className="text-2xl font-bold text-slate-900 mt-1">{workStats.total}</p>
+            <span className="text-[10px] text-muted-foreground">Assigned to teams</span>
+          </div>
+
+          <div className="rounded-xl border border-sky-200/80 bg-white p-3.5 shadow-2xs">
+            <span className="text-[10px] uppercase font-bold text-sky-600 block">Pending Acceptance</span>
+            <p className="text-2xl font-bold text-sky-700 mt-1">{workStats.pending}</p>
+            <span className="text-[10px] text-muted-foreground">Dispatched to crews</span>
+          </div>
+
+          <div className="rounded-xl border border-blue-200/80 bg-white p-3.5 shadow-2xs">
+            <span className="text-[10px] uppercase font-bold text-blue-600 block">Ongoing Repairs</span>
+            <p className="text-2xl font-bold text-blue-700 mt-1">{workStats.ongoing}</p>
+            <span className="text-[10px] text-muted-foreground">In-progress on site</span>
+          </div>
+
+          <div className="rounded-xl border border-red-200/80 bg-white p-3.5 shadow-2xs">
+            <span className="text-[10px] uppercase font-bold text-red-600 block">Delayed Work</span>
+            <p className="text-2xl font-bold text-red-700 mt-1">{workStats.delayed}</p>
+            <span className="text-[10px] text-muted-foreground">Flagged by crew</span>
+          </div>
+
+          <div className={cn(
+            'rounded-xl border bg-white p-3.5 shadow-2xs',
+            workStats.completion_submitted > 0 ? 'border-amber-400 bg-amber-50/50 ring-1 ring-amber-400/30' : 'border-amber-200/80'
+          )}>
+            <span className="text-[10px] uppercase font-bold text-amber-700 block">Awaiting Review</span>
+            <p className="text-2xl font-bold text-amber-700 mt-1">{workStats.completion_submitted}</p>
+            <span className="text-[10px] text-amber-800 font-semibold">Evidence uploaded</span>
+          </div>
+
+          <div className="rounded-xl border border-emerald-200/80 bg-white p-3.5 shadow-2xs">
+            <span className="text-[10px] uppercase font-bold text-emerald-600 block">Completed Work</span>
+            <p className="text-2xl font-bold text-emerald-700 mt-1">{workStats.completed}</p>
+            <span className="text-[10px] text-muted-foreground">Verified & resolved</span>
           </div>
         </div>
       </div>

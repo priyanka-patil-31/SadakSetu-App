@@ -47,7 +47,7 @@ class TeamAvailabilityUpdate(BaseModel):
 
 
 class TeamResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True, extra="ignore")
 
     id: UUID
     name: str
@@ -58,6 +58,8 @@ class TeamResponse(BaseModel):
     members: int
     specialties: list[str]
     availability: TeamAvailability
+    lead_user_id: UUID | None = None
+    has_account: bool = False
     is_active: bool
     created_at: datetime
     updated_at: datetime
@@ -128,3 +130,35 @@ class TeamMemberResponse(BaseModel):
     is_active: bool
     created_at: datetime
     updated_at: datetime
+
+
+class TeamLeaderCreate(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    full_name: str = Field(min_length=2, max_length=160)
+    email: str = Field(min_length=5, max_length=320)
+    phone: str = Field(min_length=10, max_length=15)
+    password: str = Field(min_length=6, max_length=128)
+
+
+class TeamLeaderAssign(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    user_id: UUID
+
+
+class AvailableLeaderResponse(BaseModel):
+    id: UUID
+    email: str
+    full_name: str
+    phone: str | None
+    is_active: bool
+
+
+class TeamWorkStatsResponse(BaseModel):
+    team_id: UUID
+    team_name: str
+    active_assignments: int = 0
+    completed_assignments: int = 0
+    delayed_assignments: int = 0
+    pending_assignments: int = 0

@@ -116,4 +116,56 @@ interface ApiService {
 
     @DELETE("api/v1/notifications/tokens/{tokenId}")
     suspend fun deleteDeviceToken(@Path("tokenId") tokenId: String)
+
+    // Work Orders & Assignments for Team Leaders
+    @GET("api/v1/assignments/my-work")
+    suspend fun getMyWork(): List<WorkOrderDto>
+
+    @POST("api/v1/assignments/{id}/accept")
+    suspend fun acceptWorkOrder(
+        @Path("id") id: String,
+        @Body body: OptionalNoteDto = OptionalNoteDto(),
+    ): WorkOrderDto
+
+    @POST("api/v1/assignments/{id}/start")
+    suspend fun startWorkOrder(
+        @Path("id") id: String,
+        @Body body: OptionalNoteDto = OptionalNoteDto(),
+    ): WorkOrderDto
+
+    @POST("api/v1/assignments/{id}/progress")
+    suspend fun updateWorkProgress(
+        @Path("id") id: String,
+        @Body body: WorkOrderProgressDto,
+    ): WorkOrderDto
+
+    @POST("api/v1/assignments/{id}/delay")
+    suspend fun reportWorkDelay(
+        @Path("id") id: String,
+        @Body body: WorkOrderDelayDto,
+    ): WorkOrderDto
+
+    @POST("api/v1/assignments/{id}/members")
+    suspend fun updateWorkMembers(
+        @Path("id") id: String,
+        @Body body: WorkOrderMembersDto,
+    ): WorkOrderDto
+
+    @POST("api/v1/assignments/{id}/photos")
+    suspend fun addWorkPhoto(
+        @Path("id") id: String,
+        @Body body: WorkOrderPhotoDto,
+    ): WorkOrderDto
+
+    @POST("api/v1/assignments/{id}/submit-completion")
+    suspend fun submitWorkCompletion(
+        @Path("id") id: String,
+        @Body body: WorkOrderCompletionDto,
+    ): WorkOrderDto
+
+    @GET("api/v1/teams/my-team/members")
+    suspend fun getMyTeamMembers(): List<TeamMemberDto>
+
+    @POST("api/v1/teams/my-team/members")
+    suspend fun createMyTeamMember(@Body body: TeamMemberCreateDto): TeamMemberDto
 }
