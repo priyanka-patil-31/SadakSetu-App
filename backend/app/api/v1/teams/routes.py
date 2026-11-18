@@ -9,6 +9,7 @@ from app.core.security import hash_password
 from app.database.dependencies import get_db
 from app.dependencies.auth import get_current_auth
 from app.models import Complaint, RepairTeam, TeamAssignment, TeamMember, User, UserRole
+from app.models.enums import TeamAvailability
 from app.schemas.teams import (
     AssignedComplaintResponse,
     AvailableLeaderResponse,
@@ -115,21 +116,59 @@ def list_available_leaders(
     ]
 
 
+def _resolve_or_create_user_team(db: DBSession, user: User) -> RepairTeam:
+    team = db.scalar(
+        select(RepairTeam).where(
+            or_(
+                RepairTeam.lead_user_id == user.id,
+                func.lower(RepairTeam.email) == user.email.strip().lower(),
+            )
+        )
+    )
+    if team is not None:
+        if team.lead_user_id is None:
+            team.lead_user_id = user.id
+            db.commit()
+            db.refresh(team)
+        return team
+
+    # 1. Try to link to an unassigned team
+    unassigned = db.scalar(select(RepairTeam).where(RepairTeam.lead_user_id.is_(None)))
+    if unassigned is not None:
+        unassigned.lead_user_id = user.id
+        if not unassigned.email:
+            unassigned.email = user.email.strip().lower()
+        if not unassigned.lead_name:
+            unassigned.lead_name = user.full_name or "Team Lead"
+        db.commit()
+        db.refresh(unassigned)
+        return unassigned
+
+    # 2. Automatically create a team for this leader
+    team_name = f"{user.full_name}'s Unit" if user.full_name else f"Team {user.email.split('@')[0].capitalize()}"
+    new_team = RepairTeam(
+        name=team_name,
+        lead_name=user.full_name or "Team Lead",
+        email=user.email.strip().lower(),
+        phone=user.phone or "9876543210",
+        specialties=["Pothole Repair", "Road Resurfacing"],
+        availability=TeamAvailability.AVAILABLE,
+        lead_user_id=user.id,
+        zone="Central Zone",
+        members=0,
+    )
+    db.add(new_team)
+    db.commit()
+    db.refresh(new_team)
+    return new_team
+
+
 @router.get("/my-team", response_model=TeamResponse)
 def get_my_team(
     auth: AuthenticatedSession = Depends(require_roles(UserRole.REPAIR_TEAM, UserRole.ADMIN)),
     db: DBSession = Depends(get_db),
 ) -> TeamResponse:
-    team = db.scalar(
-        select(RepairTeam).where(
-            or_(
-                RepairTeam.lead_user_id == auth.user.id,
-                func.lower(RepairTeam.email) == auth.user.email.strip().lower(),
-            )
-        )
-    )
-    if team is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No repair team found for this user account")
+    team = _resolve_or_create_user_team(db, auth.user)
     return _enrich_team(db, team)
 
 
@@ -138,16 +177,7 @@ def get_my_team_members(
     auth: AuthenticatedSession = Depends(require_roles(UserRole.REPAIR_TEAM, UserRole.ADMIN)),
     db: DBSession = Depends(get_db),
 ) -> list[TeamMember]:
-    team = db.scalar(
-        select(RepairTeam).where(
-            or_(
-                RepairTeam.lead_user_id == auth.user.id,
-                func.lower(RepairTeam.email) == auth.user.email.strip().lower(),
-            )
-        )
-    )
-    if team is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No repair team found for this user account")
+    team = _resolve_or_create_user_team(db, auth.user)
     return db.scalars(select(TeamMember).where(TeamMember.team_id == team.id).order_by(TeamMember.name)).all()
 
 
@@ -157,17 +187,7 @@ def create_my_team_member(
     auth: AuthenticatedSession = Depends(require_roles(UserRole.REPAIR_TEAM, UserRole.ADMIN)),
     db: DBSession = Depends(get_db),
 ) -> TeamMember:
-    team = db.scalar(
-        select(RepairTeam).where(
-            or_(
-                RepairTeam.lead_user_id == auth.user.id,
-                func.lower(RepairTeam.email) == auth.user.email.strip().lower(),
-            )
-        )
-    )
-    if team is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No repair team found for this user account")
-
+    team = _resolve_or_create_user_team(db, auth.user)
     member = TeamMember(
         team_id=team.id,
         name=payload.name.strip(),
@@ -176,6 +196,7 @@ def create_my_team_member(
         skills=[item.strip() for item in payload.skills if item.strip()],
     )
     db.add(member)
+    team.members = (team.members or 0) + 1
     try:
         db.commit()
         db.refresh(member)
@@ -192,17 +213,7 @@ def update_my_team_member(
     auth: AuthenticatedSession = Depends(require_roles(UserRole.REPAIR_TEAM, UserRole.ADMIN)),
     db: DBSession = Depends(get_db),
 ) -> TeamMember:
-    team = db.scalar(
-        select(RepairTeam).where(
-            or_(
-                RepairTeam.lead_user_id == auth.user.id,
-                func.lower(RepairTeam.email) == auth.user.email.strip().lower(),
-            )
-        )
-    )
-    if team is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No repair team found for this user account")
-
+    team = _resolve_or_create_user_team(db, auth.user)
     member = db.scalar(select(TeamMember).where(TeamMember.id == member_id, TeamMember.team_id == team.id))
     if member is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Team member not found")

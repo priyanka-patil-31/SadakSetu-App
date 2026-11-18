@@ -116,11 +116,13 @@ class AuthViewModel @Inject constructor(
 
 
 
-    fun submit(phone: String? = null) {
+    fun submit(phone: String? = null, role: String = "CITIZEN") {
         val current = _form.value
+        val email = current.email.trim()
+        val password = current.password.trim()
         val validation = if (current.isRegister) {
-            Validators.name(current.fullName) ?: Validators.email(current.email) ?: Validators.password(current.password, registration = true)
-        } else Validators.email(current.email) ?: Validators.password(current.password)
+            Validators.name(current.fullName) ?: Validators.email(email) ?: Validators.password(password, registration = true)
+        } else Validators.email(email) ?: Validators.password(password)
         if (validation != null) {
             _form.value = current.copy(error = validation)
             return
@@ -128,8 +130,8 @@ class AuthViewModel @Inject constructor(
         viewModelScope.launch {
             _form.value = current.copy(isSubmitting = true, error = null)
             val result = if (current.isRegister) {
-                repository.register(current.fullName, current.email, current.password, phone)
-            } else repository.login(current.email, current.password)
+                repository.register(current.fullName.trim(), email, password, phone, role)
+            } else repository.login(email, password)
             result.onSuccess { user ->
                 _form.value = current.copy(isSubmitting = false, password = "")
                 _authState.value = AuthState.Authenticated(user)

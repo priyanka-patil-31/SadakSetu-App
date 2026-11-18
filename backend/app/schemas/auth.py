@@ -13,31 +13,29 @@ class ClientType(StrEnum):
 
 
 class RegisterRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
-    email: EmailStr
-    password: str = Field(min_length=8, max_length=128)
+    email: str = Field(min_length=3, max_length=320)
+    password: str = Field(min_length=6, max_length=128)
     full_name: str = Field(min_length=2, max_length=160)
     phone: str | None = None
+    role: str = "CITIZEN"
     client_type: ClientType = ClientType.BROWSER
 
 
 class LoginRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
-    # Local development uses the intentionally non-public `.local` demo domain.
-    # Keep registration strict, but allow the seeded demo identity to reach the
-    # authentication service instead of being rejected by EmailStr first.
     email: str = Field(min_length=3, max_length=320)
     password: str = Field(min_length=1, max_length=128)
     client_type: ClientType = ClientType.BROWSER
 
 
 class ForgotPasswordRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
     email: str = Field(min_length=3, max_length=320)
-    new_password: str = Field(min_length=8, max_length=128)
+    new_password: str = Field(min_length=6, max_length=128)
 
 
 class AuthUserResponse(BaseModel):

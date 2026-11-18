@@ -3,7 +3,7 @@ package com.sadaksetu.domain.repositories
 import com.sadaksetu.domain.models.User
 
 interface AuthRepository {
-    suspend fun register(fullName: String, email: String, password: String, phone: String? = null): Result<User>
+    suspend fun register(fullName: String, email: String, password: String, phone: String? = null, role: String = "CITIZEN"): Result<User>
     suspend fun login(email: String, password: String): Result<User>
     suspend fun forgotPassword(email: String, newPassword: String): Result<String>
     suspend fun changePassword(currentPassword: String, newPassword: String): Result<String>

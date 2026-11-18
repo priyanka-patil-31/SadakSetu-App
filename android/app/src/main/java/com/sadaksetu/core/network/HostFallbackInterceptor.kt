@@ -40,6 +40,8 @@ class HostFallbackInterceptor @Inject constructor(
 
         // 2. Current known Wi-Fi LAN IP & USB reverse
         list.add("127.0.0.1" to 8001)
+        list.add("172.23.78.209" to 8001)
+        list.add("10.151.223.209" to 8001)
         list.add("10.191.246.209" to 8001)
         list.add("10.218.165.209" to 8001)
         list.add("10.190.179.209" to 8001)

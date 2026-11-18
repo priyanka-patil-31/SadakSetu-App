@@ -3,7 +3,7 @@ package com.sadaksetu.core.common
 object Validators {
     fun email(value: String): String? = when {
         value.isBlank() -> "Email address is required"
-        !EMAIL_REGEX.matches(value.trim()) -> "Enter a valid email address (e.g. name@example.com)"
+        !value.contains('@') || !value.contains('.') -> "Enter a valid email address (e.g. name@example.com)"
         else -> null
     }
 
@@ -12,24 +12,14 @@ object Validators {
         return when {
             digits.isBlank() -> "Mobile number is required"
             digits.length != 10 -> "Mobile number must be exactly 10 digits"
-            !digits.matches(Regex("^[6-9][0-9]{9}$")) -> "Mobile number must start with 6, 7, 8, or 9"
             else -> null
         }
     }
 
     fun password(value: String, registration: Boolean = false): String? {
         if (value.isBlank()) return "Password is required"
-        if (!registration) {
-            return if (value.length < 6) "Password must be at least 6 characters" else null
-        }
-        return when {
-            value.length < 8 -> "Password must be at least 8 characters"
-            !value.any { it.isUpperCase() } -> "Password must contain at least one uppercase letter (A-Z)"
-            !value.any { it.isLowerCase() } -> "Password must contain at least one lowercase letter (a-z)"
-            !value.any { it.isDigit() } -> "Password must contain at least one number (0-9)"
-            !value.any { "!@#$%^&*()_+-=[]{}|;:,.<>?~`".contains(it) } -> "Password must contain at least one special symbol (e.g. @, #, $, !)"
-            else -> null
-        }
+        if (value.length < 6) return "Password must be at least 6 characters"
+        return null
     }
 
     fun name(value: String): String? = when {

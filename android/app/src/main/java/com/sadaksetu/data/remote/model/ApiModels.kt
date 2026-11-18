@@ -33,6 +33,7 @@ data class RegisterRequestDto(
     val password: String,
     @SerialName("full_name") val fullName: String,
     val phone: String? = null,
+    val role: String = "CITIZEN",
     @SerialName("client_type") val clientType: String = "android",
 )
 

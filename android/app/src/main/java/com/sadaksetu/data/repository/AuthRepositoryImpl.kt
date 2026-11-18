@@ -16,8 +16,8 @@ class AuthRepositoryImpl @Inject constructor(
     private val api: ApiService,
     private val sessionStore: SessionStore,
 ) : AuthRepository {
-    override suspend fun register(fullName: String, email: String, password: String, phone: String?): Result<User> = runCatching {
-        val response = api.register(RegisterRequestDto(email = email.trim(), password = password, fullName = fullName.trim(), phone = phone?.trim()?.takeIf { it.isNotBlank() }))
+    override suspend fun register(fullName: String, email: String, password: String, phone: String?, role: String): Result<User> = runCatching {
+        val response = api.register(RegisterRequestDto(email = email.trim(), password = password.trim(), fullName = fullName.trim(), phone = phone?.trim()?.takeIf { it.isNotBlank() }, role = role))
         response.sessionId?.let { sessionStore.saveToken(it) }
         response.user.toDomain()
     }.recoverCatching { throw it.toAppError().asException() }
@@ -33,7 +33,7 @@ class AuthRepositoryImpl @Inject constructor(
     }.recoverCatching { throw it.toAppError().asException() }
 
     override suspend fun login(email: String, password: String): Result<User> = runCatching {
-        api.login(LoginRequestDto(email.trim(), password)).also { sessionStore.saveToken(requireNotNull(it.sessionId)) }.user.toDomain()
+        api.login(LoginRequestDto(email.trim(), password.trim())).also { sessionStore.saveToken(requireNotNull(it.sessionId)) }.user.toDomain()
     }.recoverCatching { throw it.toAppError().asException() }
 
     override suspend fun restoreSession(): Result<User> = runCatching { api.authMe().toDomain() }.recoverCatching { throw it.toAppError().asException() }

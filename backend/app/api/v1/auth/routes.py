@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Response, status
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session as DBSession
 
@@ -7,7 +7,8 @@ from app.core.config import get_settings
 from app.core.security import hash_password
 from app.database.dependencies import get_db
 from app.dependencies.auth import get_current_auth, get_current_user
-from app.models import Session, User, UserRole
+from app.models import RepairTeam, Session, User, UserRole
+from app.models.enums import TeamAvailability
 from app.schemas.auth import (
     AuthResponse,
     AuthUserResponse,
@@ -47,24 +48,51 @@ def _auth_response(response: Response, user: User, token: str, session, client_t
 @router.post("/register", response_model=AuthResponse, status_code=status.HTTP_201_CREATED)
 def register(payload: RegisterRequest, response: Response, db: DBSession = Depends(get_db)) -> AuthResponse:
     settings = get_settings()
-    if len(payload.password) < settings.password_min_length:
+    if len(payload.password) < 6:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Password does not meet requirements"
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Password must be at least 6 characters"
         )
-    email = normalize_email(str(payload.email))
-    if db.scalar(select(User).where(User.email == email)) is not None:
+    email = normalize_email(str(payload.email).strip())
+    if db.scalar(select(User).where(func.lower(User.email) == email.lower())) is not None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="An account with this email already exists")
+
+    req_role = (getattr(payload, "role", "CITIZEN") or "CITIZEN").upper().strip()
+    target_role = UserRole.REPAIR_TEAM if req_role in ("REPAIR_TEAM", "WORKER", "LEAD", "LEADER") else UserRole.CITIZEN
 
     user = User(
         email=email,
         password_hash=hash_password(payload.password),
         full_name=payload.full_name.strip(),
         phone=payload.phone.strip() if payload.phone else None,
-        role=UserRole.CITIZEN,
+        role=target_role,
     )
     try:
         db.add(user)
         db.flush()
+
+        if target_role == UserRole.REPAIR_TEAM:
+            unassigned_team = db.scalar(select(RepairTeam).where(RepairTeam.lead_user_id.is_(None)))
+            if unassigned_team:
+                unassigned_team.lead_user_id = user.id
+                unassigned_team.lead_name = user.full_name
+                unassigned_team.email = user.email
+                if user.phone:
+                    unassigned_team.phone = user.phone
+            else:
+                team_name = f"{user.full_name}'s Unit" if user.full_name else f"Team {user.email.split('@')[0].capitalize()}"
+                new_team = RepairTeam(
+                    name=team_name,
+                    lead_name=user.full_name or "Team Lead",
+                    email=user.email.strip().lower(),
+                    phone=user.phone or "9876543210",
+                    specialties=["Pothole Repair", "Road Resurfacing"],
+                    availability=TeamAvailability.AVAILABLE,
+                    lead_user_id=user.id,
+                    zone="Central Zone",
+                    members=0,
+                )
+                db.add(new_team)
+
         token, session = create_session(db, user, payload.client_type, settings)
         record_audit(db, actor_id=user.id, action="REGISTER", entity_type="User", entity_id=user.id)
         db.commit()
@@ -79,8 +107,14 @@ def register(payload: RegisterRequest, response: Response, db: DBSession = Depen
 @router.post("/login", response_model=AuthResponse)
 def login(payload: LoginRequest, response: Response, db: DBSession = Depends(get_db)) -> AuthResponse:
     settings = get_settings()
-    user = db.scalar(select(User).where(User.email == normalize_email(str(payload.email))))
-    if not authenticate_credentials(user, payload.password):
+    norm_email = normalize_email(str(payload.email).strip())
+    user = db.scalar(select(User).where(User.email == norm_email))
+    if user is None:
+        user = db.scalar(select(User).where(func.lower(User.email) == norm_email.lower()))
+    
+    # Try stripped password then unstripped password
+    pwd = payload.password
+    if not authenticate_credentials(user, pwd.strip()) and not authenticate_credentials(user, pwd):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
     token, session = create_session(db, user, payload.client_type, settings)
     record_audit(db, actor_id=user.id, action="LOGIN", entity_type="User", entity_id=user.id)

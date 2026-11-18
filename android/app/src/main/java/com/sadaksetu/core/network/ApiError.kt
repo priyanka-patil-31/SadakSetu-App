@@ -29,8 +29,18 @@ fun Throwable.toAppError(): AppError = when (this) {
     is ConnectException, is UnknownHostException -> AppError.BackendUnavailable()
     is IOException -> AppError.Network()
     is HttpException -> when {
-        code() == 401 -> AppError.Unauthorized()
-        code() in 400..499 -> AppError.Server(response()?.errorBody()?.string()?.let(::readDetail) ?: "Request could not be completed.")
+        code() in 400..499 -> {
+            val detailMsg = response()?.errorBody()?.string()?.let(::readDetail)
+            if (code() == 401) {
+                if (!detailMsg.isNullOrBlank() && !detailMsg.contains("expired", ignoreCase = true)) {
+                    AppError.Server(detailMsg)
+                } else {
+                    AppError.Unauthorized(detailMsg ?: "Your session has expired. Please sign in again.")
+                }
+            } else {
+                AppError.Server(detailMsg ?: "Request could not be completed.")
+            }
+        }
         else -> AppError.Server("The SadakSetu service is temporarily unavailable.")
     }
     else -> AppError.Unknown(message ?: "Something went wrong. Please try again.")

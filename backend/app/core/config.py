@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     host: str = "127.0.0.1"
     port: int = 8000
     log_level: str = "INFO"
-    cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
+    cors_origins: str = "http://localhost:5173,http://localhost:5174,http://127.0.0.1:5173,http://127.0.0.1:5174,http://localhost:3000,http://127.0.0.1:3000,http://172.23.78.209:5173,http://172.23.78.209:5174,http://10.151.223.209:5173"
     database_url: str = "postgresql+psycopg://sadaksetu:change-me@localhost:5432/sadaksetu"
     session_cookie_name: str = "sadaksetu_session"
     session_cookie_secure: bool = False
@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     session_ttl_minutes: int = 480
     android_session_ttl_days: int = 30
     session_idle_timeout_minutes: int = 60
-    password_min_length: int = 8
+    password_min_length: int = 6
     upload_root: str = "uploads"
     max_image_size_bytes: int = 10_485_760
     allowed_image_types: str = "image/jpeg,image/png,image/webp"

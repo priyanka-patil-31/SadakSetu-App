@@ -32,6 +32,7 @@ import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -64,13 +65,11 @@ import com.sadaksetu.core.ui.components.PrimaryButton
 @Composable
 fun AuthScreen(viewModel: AuthViewModel = hiltViewModel()) {
     val form by viewModel.form.collectAsState()
-    val currentServerUrl by viewModel.currentServerUrl.collectAsState()
-    var showServerConfigDialog by remember { mutableStateOf(false) }
-    var serverUrlInput by remember { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }
     var confirmPasswordVisible by remember { mutableStateOf(false) }
     var confirmPassword by remember { mutableStateOf("") }
     var phoneNumber by remember { mutableStateOf("") }
+    var accountRole by remember { mutableStateOf("CITIZEN") }
     var rememberMe by remember { mutableStateOf(true) }
     var agreedToTerms by remember { mutableStateOf(false) }
     var localError by remember { mutableStateOf<String?>(null) }
@@ -94,58 +93,7 @@ fun AuthScreen(viewModel: AuthViewModel = hiltViewModel()) {
         verticalArrangement = Arrangement.Center,
     ) {
         LogoHeader()
-        Spacer(Modifier.height(12.dp))
-
-        Surface(
-            shape = RoundedCornerShape(8.dp),
-            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable {
-                    serverUrlInput = currentServerUrl
-                    showServerConfigDialog = true
-                }
-        ) {
-            Row(
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Settings,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.padding(end = 8.dp)
-                    )
-                    Column {
-                        Text(
-                            text = "Server Connection",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Text(
-                            text = currentServerUrl,
-                            style = MaterialTheme.typography.bodySmall,
-                            fontWeight = FontWeight.Medium,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                }
-                Text(
-                    text = "Change",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.primary,
-                    fontWeight = FontWeight.Bold
-                )
-            }
-        }
-
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(20.dp))
 
         TabRow(selectedTabIndex = if (form.isRegister) 1 else 0) {
             Tab(
@@ -169,6 +117,31 @@ fun AuthScreen(viewModel: AuthViewModel = hiltViewModel()) {
         Spacer(Modifier.height(20.dp))
 
         if (form.isRegister) {
+            Text(
+                text = "Account Role",
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.height(4.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                FilterChip(
+                    selected = accountRole == "CITIZEN",
+                    onClick = { accountRole = "CITIZEN" },
+                    label = { Text("Citizen") },
+                    modifier = Modifier.weight(1f)
+                )
+                FilterChip(
+                    selected = accountRole == "REPAIR_TEAM",
+                    onClick = { accountRole = "REPAIR_TEAM" },
+                    label = { Text("Lead") },
+                    modifier = Modifier.weight(1f)
+                )
+            }
+            Spacer(Modifier.height(10.dp))
             AppTextField(
                 value = form.fullName,
                 onValueChange = {
@@ -268,10 +241,7 @@ fun AuthScreen(viewModel: AuthViewModel = hiltViewModel()) {
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    PasswordRuleItem(text = "At least 8 characters", valid = form.password.length >= 8)
-                    PasswordRuleItem(text = "Uppercase (A-Z) & lowercase (a-z)", valid = form.password.any { it.isUpperCase() } && form.password.any { it.isLowerCase() })
-                    PasswordRuleItem(text = "At least one digit (0-9)", valid = form.password.any { it.isDigit() })
-                    PasswordRuleItem(text = "At least one symbol (!@#$%^&*)", valid = form.password.any { "!@#$%^&*()_+-=[]{}|;:,.<>?~`".contains(it) })
+                    PasswordRuleItem(text = "At least 6 characters", valid = form.password.length >= 6)
                     if (confirmPassword.isNotEmpty()) {
                         PasswordRuleItem(text = "Passwords match", valid = form.password == confirmPassword)
                     }
@@ -330,24 +300,6 @@ fun AuthScreen(viewModel: AuthViewModel = hiltViewModel()) {
         localError?.let { ErrorState(it) }
         form.error?.let { ErrorState(it) }
 
-        if (form.error != null || localError != null) {
-            Spacer(Modifier.height(6.dp))
-            OutlinedButton(
-                onClick = {
-                    serverUrlInput = currentServerUrl
-                    showServerConfigDialog = true
-                },
-                modifier = Modifier.fillMaxWidth().height(42.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Settings,
-                    contentDescription = null,
-                    modifier = Modifier.padding(end = 6.dp)
-                )
-                Text("Configure Server IP / Mode", style = MaterialTheme.typography.labelSmall)
-            }
-        }
-
         Spacer(Modifier.height(16.dp))
 
         PrimaryButton(
@@ -395,7 +347,7 @@ fun AuthScreen(viewModel: AuthViewModel = hiltViewModel()) {
                     }
                 }
                 if (form.isRegister) {
-                    viewModel.submit(phoneNumber)
+                    viewModel.submit(phoneNumber, accountRole)
                 } else {
                     viewModel.submit()
                 }
@@ -420,7 +372,7 @@ fun AuthScreen(viewModel: AuthViewModel = hiltViewModel()) {
             text = {
                 Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
                     Text(
-                        "Enter your account email and new password (min. 8 characters) to reset your credentials.",
+                        "Enter your account email and new password (min. 6 characters) to reset your credentials.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -470,8 +422,8 @@ fun AuthScreen(viewModel: AuthViewModel = hiltViewModel()) {
                             resetError = "Please enter your email"
                             return@TextButton
                         }
-                        if (resetPassword.length < 8) {
-                            resetError = "Password must be at least 8 characters"
+                        if (resetPassword.length < 6) {
+                            resetError = "Password must be at least 6 characters"
                             return@TextButton
                         }
                         if (resetPassword != resetConfirmPassword) {
