@@ -52,6 +52,21 @@ class ServerConfigStore @Inject constructor(@ApplicationContext private val cont
         }
     }
 
+    /**
+     * Attempts to resolve the device's own local Wi-Fi IP address.
+     */
+    fun getLocalWifiIp(): String? {
+        return try {
+            val wifiManager = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
+            val dhcp = wifiManager?.dhcpInfo ?: return null
+            val ip = dhcp.ipAddress
+            if (ip == 0) null
+            else "${ip and 0xff}.${ip shr 8 and 0xff}.${ip shr 16 and 0xff}.${ip shr 24 and 0xff}"
+        } catch (_: Exception) {
+            null
+        }
+    }
+
     private companion object {
         const val KEY_SERVER_URL = "custom_server_url"
     }

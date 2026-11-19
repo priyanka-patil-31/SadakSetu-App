@@ -84,6 +84,11 @@ fun AuthScreen(viewModel: AuthViewModel = hiltViewModel()) {
     var resetSuccess by remember { mutableStateOf<String?>(null) }
     var isResetting by remember { mutableStateOf(false) }
 
+    // Server config dialog state
+    var showServerConfigDialog by remember { mutableStateOf(false) }
+    val currentServerUrl by viewModel.currentServerUrl.collectAsState()
+    var inputServerUrl by remember(showServerConfigDialog) { mutableStateOf(currentServerUrl) }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -92,7 +97,24 @@ fun AuthScreen(viewModel: AuthViewModel = hiltViewModel()) {
             .padding(horizontal = 24.dp, vertical = 28.dp),
         verticalArrangement = Arrangement.Center,
     ) {
-        LogoHeader()
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.Top
+        ) {
+            Spacer(Modifier.size(48.dp))
+            LogoHeader()
+            IconButton(onClick = {
+                inputServerUrl = currentServerUrl
+                showServerConfigDialog = true
+            }) {
+                Icon(
+                    Icons.Default.Settings,
+                    contentDescription = "Server Settings",
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            }
+        }
         Spacer(Modifier.height(20.dp))
 
         TabRow(selectedTabIndex = if (form.isRegister) 1 else 0) {
@@ -451,6 +473,66 @@ fun AuthScreen(viewModel: AuthViewModel = hiltViewModel()) {
             },
             dismissButton = {
                 TextButton(onClick = { showForgotPasswordDialog = false }, enabled = !isResetting) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    if (showServerConfigDialog) {
+        AlertDialog(
+            onDismissRequest = { showServerConfigDialog = false },
+            title = { Text("Server Connection") },
+            text = {
+                Column {
+                    Text(
+                        "Configure the SadakSetu backend API address:",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    AppTextField(
+                        value = inputServerUrl,
+                        onValueChange = { inputServerUrl = it },
+                        label = "API Base URL"
+                    )
+                    Spacer(Modifier.height(14.dp))
+                    Text(
+                        "Quick Presets:",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = { inputServerUrl = "http://10.179.117.209:8001/" },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("Wi-Fi IP", style = MaterialTheme.typography.labelSmall)
+                        }
+                        OutlinedButton(
+                            onClick = { inputServerUrl = "http://127.0.0.1:8001/" },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("USB Reverse", style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.updateServerUrl(inputServerUrl)
+                        showServerConfigDialog = false
+                    }
+                ) {
+                    Text("Save & Apply")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showServerConfigDialog = false }) {
                     Text("Cancel")
                 }
             }

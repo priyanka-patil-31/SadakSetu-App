@@ -38,25 +38,38 @@ class HostFallbackInterceptor @Inject constructor(
             list.add(customUrl.host to customUrl.port)
         }
 
-        // 2. Current known Wi-Fi LAN IP & USB reverse
+        // 2. Active Wi-Fi LAN IP & USB reverse
+        list.add("10.179.117.209" to 8001)
         list.add("127.0.0.1" to 8001)
+
+        // 3. Dynamically discover .209 or .1 on the device's current Wi-Fi subnet
+        serverConfigStore.getLocalWifiIp()?.let { localIp ->
+            val parts = localIp.split(".")
+            if (parts.size == 4) {
+                val subnet = "${parts[0]}.${parts[1]}.${parts[2]}"
+                list.add("$subnet.209" to 8001)
+                list.add("$subnet.1" to 8001)
+            }
+        }
+
+        serverConfigStore.getWifiGatewayIp()?.let { gateway ->
+            if (gateway != "0.0.0.0" && gateway != "127.0.0.1") {
+                list.add(gateway to 8001)
+                val parts = gateway.split(".")
+                if (parts.size == 4) {
+                    val subnet = "${parts[0]}.${parts[1]}.${parts[2]}"
+                    list.add("$subnet.209" to 8001)
+                }
+            }
+        }
+
+        // 4. Other historical/fallback LAN IPs & emulator
+        list.add("10.25.10.209" to 8001)
         list.add("172.23.78.209" to 8001)
         list.add("10.151.223.209" to 8001)
         list.add("10.191.246.209" to 8001)
         list.add("10.218.165.209" to 8001)
         list.add("10.190.179.209" to 8001)
-
-        // 3. Current Wi-Fi gateway IP (e.g. laptop hotspot)
-        serverConfigStore.getWifiGatewayIp()?.let { gateway ->
-            if (gateway != "0.0.0.0" && gateway != "127.0.0.1") {
-                list.add(gateway to 8001)
-            }
-        }
-
-        // 4. USB ADB reverse tunnel
-        list.add("127.0.0.1" to 8001)
-
-        // 5. Fallback historical IPs & emulator
         list.add("10.154.55.209" to 8001)
         list.add("10.39.6.209" to 8001)
         list.add("10.0.2.2" to 8001)
