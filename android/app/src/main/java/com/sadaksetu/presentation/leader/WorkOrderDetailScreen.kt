@@ -82,10 +82,10 @@ import com.sadaksetu.BuildConfig
 import com.sadaksetu.core.common.UiState
 import com.sadaksetu.domain.models.WorkOrder
 
-fun resolveImageUrl(url: String?): String? {
+fun resolveImageUrl(url: String?, baseUrl: String? = null): String? {
     if (url.isNullOrBlank()) return null
     if (url.startsWith("http://") || url.startsWith("https://")) return url
-    val base = BuildConfig.API_BASE_URL.trimEnd('/')
+    val base = (baseUrl?.takeIf { it.isNotBlank() } ?: BuildConfig.API_BASE_URL).trimEnd('/')
     val path = if (url.startsWith("/")) url else "/$url"
     return "$base$path"
 }
@@ -100,6 +100,7 @@ fun WorkOrderDetailScreen(
     val actionInProgress by viewModel.actionInProgress.collectAsState()
     val message by viewModel.message.collectAsState()
     val teamMembersState by viewModel.teamMembersState.collectAsState()
+    val currentServerUrl by viewModel.serverUrl.collectAsState()
 
     // Dialog states
     var showProgressDialog by remember { mutableStateOf(false) }
@@ -358,7 +359,7 @@ fun WorkOrderDetailScreen(
                     }
 
                     // Citizen initial uploaded photo
-                    resolveImageUrl(workOrder.complaintPhotoUrl)?.let { photoUrl ->
+                    resolveImageUrl(workOrder.complaintPhotoUrl, currentServerUrl)?.let { photoUrl ->
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(text = "Citizen Report Photo", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF64748B))
                         AsyncImage(
@@ -427,7 +428,7 @@ fun WorkOrderDetailScreen(
                     } else {
                         LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             items(workOrder.beforePhotos) { url ->
-                                resolveImageUrl(url)?.let { fullUrl ->
+                                resolveImageUrl(url, currentServerUrl)?.let { fullUrl ->
                                     AsyncImage(
                                         model = fullUrl,
                                         contentDescription = "Before repair photo",
@@ -451,7 +452,7 @@ fun WorkOrderDetailScreen(
                     } else {
                         LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             items(workOrder.afterPhotos) { url ->
-                                resolveImageUrl(url)?.let { fullUrl ->
+                                resolveImageUrl(url, currentServerUrl)?.let { fullUrl ->
                                     AsyncImage(
                                         model = fullUrl,
                                         contentDescription = "After repair photo",

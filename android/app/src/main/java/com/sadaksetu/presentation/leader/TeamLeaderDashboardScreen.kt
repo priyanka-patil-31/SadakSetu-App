@@ -3,6 +3,8 @@
 package com.sadaksetu.presentation.leader
 
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -49,6 +51,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -70,6 +73,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -85,9 +89,15 @@ fun TeamLeaderApp(
 ) {
     val workOrdersState by viewModel.workOrdersState.collectAsState()
     val teamMembersState by viewModel.teamMembersState.collectAsState()
+    val notificationsState by viewModel.notificationsState.collectAsState()
     val selectedFilter by viewModel.selectedFilter.collectAsState()
     val message by viewModel.message.collectAsState()
     val context = LocalContext.current
+
+    val unreadCount = when (val s = notificationsState) {
+        is UiState.Data -> s.value.count { it.readAt.isNullOrBlank() }
+        else -> 0
+    }
 
     var currentTab by remember { mutableIntStateOf(0) }
     var selectedWorkOrderId by remember { mutableStateOf<String?>(null) }
@@ -108,6 +118,9 @@ fun TeamLeaderApp(
             else -> null
         }
         if (activeOrder != null) {
+            BackHandler {
+                selectedWorkOrderId = null
+            }
             WorkOrderDetailScreen(
                 workOrder = activeOrder,
                 viewModel = viewModel,
@@ -144,7 +157,39 @@ fun TeamLeaderApp(
                     }
                 },
                 actions = {
-                    IconButton(onClick = { viewModel.loadMyWork(); viewModel.loadTeamMembers() }) {
+                    IconButton(onClick = { currentTab = 1 }) {
+                        Box {
+                            Icon(
+                                Icons.Default.Notifications,
+                                contentDescription = "Messages",
+                                tint = if (currentTab == 1) Color(0xFFEA580C) else Color(0xFF475569),
+                            )
+                            if (unreadCount > 0) {
+                                Surface(
+                                    shape = CircleShape,
+                                    color = Color(0xFFDC2626),
+                                    modifier = Modifier
+                                        .size(16.dp)
+                                        .align(Alignment.TopEnd),
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Text(
+                                            text = "$unreadCount",
+                                            fontSize = 9.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color.White,
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    IconButton(onClick = {
+                        viewModel.loadMyWork()
+                        viewModel.loadTeamMembers()
+                        viewModel.loadNotifications()
+                        viewModel.syncLiveLocation()
+                    }) {
                         Icon(Icons.Default.Refresh, contentDescription = "Refresh")
                     }
                     IconButton(onClick = { showSignOutDialog = true }) {
@@ -171,17 +216,39 @@ fun TeamLeaderApp(
                     selected = currentTab == 1,
                     onClick = { currentTab = 1 },
                     icon = {
+                        Box {
+                            Icon(
+                                if (currentTab == 1) Icons.Filled.Notifications else Icons.Outlined.Notifications,
+                                contentDescription = "Messages",
+                            )
+                            if (unreadCount > 0) {
+                                Surface(
+                                    shape = CircleShape,
+                                    color = Color(0xFFDC2626),
+                                    modifier = Modifier
+                                        .size(8.dp)
+                                        .align(Alignment.TopEnd),
+                                ) {}
+                            }
+                        }
+                    },
+                    label = { Text("Messages", fontSize = 11.sp, fontWeight = if (currentTab == 1) FontWeight.Bold else FontWeight.Normal) },
+                )
+                NavigationBarItem(
+                    selected = currentTab == 2,
+                    onClick = { currentTab = 2 },
+                    icon = {
                         Icon(
-                            if (currentTab == 1) Icons.Filled.Group else Icons.Outlined.Group,
-                            contentDescription = "Team Members",
+                            if (currentTab == 2) Icons.Filled.Group else Icons.Outlined.Group,
+                            contentDescription = "Crew Members",
                         )
                     },
-                    label = { Text("Team Members", fontSize = 11.sp, fontWeight = if (currentTab == 1) FontWeight.Bold else FontWeight.Normal) },
+                    label = { Text("Crew", fontSize = 11.sp, fontWeight = if (currentTab == 2) FontWeight.Bold else FontWeight.Normal) },
                 )
             }
         },
         floatingActionButton = {
-            if (currentTab == 1) {
+            if (currentTab == 2) {
                 FloatingActionButton(
                     onClick = { showAddMemberDialog = true },
                     containerColor = Color(0xFFEA580C),
@@ -202,6 +269,60 @@ fun TeamLeaderApp(
                 // TAB 0: MY ASSIGNED WORK
                 0 -> {
                     Column(modifier = Modifier.fillMaxSize()) {
+                        // Unread Admin Dispatch Alert Banner
+                        val unreadNotif = when (val s = notificationsState) {
+                            is UiState.Data -> s.value.firstOrNull { it.readAt.isNullOrBlank() }
+                            else -> null
+                        }
+                        if (unreadNotif != null) {
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF7ED)),
+                                shape = RoundedCornerShape(12.dp),
+                                border = BorderStroke(1.dp, Color(0xFFFDBA74)),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 8.dp)
+                                    .clickable { currentTab = 1 },
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                ) {
+                                    Icon(Icons.Default.Notifications, contentDescription = null, tint = Color(0xFFEA580C), modifier = Modifier.size(22.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = unreadNotif.title,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 12.sp,
+                                            color = Color(0xFF9A3412),
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                        Text(
+                                            text = unreadNotif.body,
+                                            fontSize = 11.sp,
+                                            color = Color(0xFF7C2D12),
+                                            maxLines = 2,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                    }
+                                    Surface(
+                                        shape = RoundedCornerShape(6.dp),
+                                        color = Color(0xFFEA580C),
+                                    ) {
+                                        Text(
+                                            text = "View",
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color.White,
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
                         // Filter Pills Bar
                         LazyRow(
                             modifier = Modifier
@@ -288,8 +409,65 @@ fun TeamLeaderApp(
                     }
                 }
 
-                // TAB 1: TEAM MEMBERS
+                // TAB 1: ADMIN MESSAGES & DIRECTIVES
                 1 -> {
+                    when (val s = notificationsState) {
+                        UiState.Loading -> {
+                            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                CircularProgressIndicator(color = Color(0xFFEA580C))
+                            }
+                        }
+                        is UiState.Error -> {
+                            Box(modifier = Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Text("Failed to load messages", fontWeight = FontWeight.Bold, color = Color(0xFFDC2626))
+                                    Text(text = s.message, fontSize = 12.sp, color = Color(0xFF64748B))
+                                    Button(onClick = { viewModel.loadNotifications() }) { Text("Retry") }
+                                }
+                            }
+                        }
+                        is UiState.Data -> {
+                            val messages = s.value
+                            if (messages.isEmpty()) {
+                                Box(modifier = Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
+                                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        Icon(Icons.Default.Notifications, contentDescription = null, tint = Color(0xFFCBD5E1), modifier = Modifier.size(54.dp))
+                                        Text("No Messages from Admin", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color(0xFF64748B))
+                                        Text("Direct dispatches and instructions from administrators will appear here.", fontSize = 12.sp, color = Color(0xFF94A3B8))
+                                    }
+                                }
+                            } else {
+                                LazyColumn(
+                                    modifier = Modifier.fillMaxSize().padding(16.dp),
+                                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                                ) {
+                                    items(messages) { notif ->
+                                        AdminMessageCard(
+                                            notification = notif,
+                                            onOpenComplaint = { cmpId ->
+                                                val targetWo = when (val woState = workOrdersState) {
+                                                    is UiState.Data -> woState.value.firstOrNull { it.id == cmpId || it.complaintId == cmpId }
+                                                    else -> null
+                                                }
+                                                if (targetWo != null) {
+                                                    selectedWorkOrderId = targetWo.id
+                                                } else {
+                                                    Toast.makeText(context, "Complaint ID: $cmpId", Toast.LENGTH_SHORT).show()
+                                                }
+                                            },
+                                            onMarkRead = {
+                                                viewModel.markNotificationRead(notif.id)
+                                            },
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // TAB 2: TEAM MEMBERS
+                2 -> {
                     when (val state = teamMembersState) {
                         UiState.Loading -> {
                             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -589,6 +767,100 @@ fun WorkOrderCard(
                     fontWeight = FontWeight.Bold,
                     color = Color(0xFFEA580C),
                 )
+            }
+        }
+    }
+}
+
+@Composable
+fun AdminMessageCard(
+    notification: com.sadaksetu.data.remote.model.NotificationDto,
+    onOpenComplaint: (String) -> Unit,
+    onMarkRead: () -> Unit,
+) {
+    val isUnread = notification.readAt.isNullOrBlank()
+    Card(
+        colors = CardDefaults.cardColors(containerColor = if (isUnread) Color(0xFFFFFBF0) else Color.White),
+        shape = RoundedCornerShape(16.dp),
+        border = if (isUnread) BorderStroke(1.dp, Color(0xFFFDBA74)) else BorderStroke(1.dp, Color(0xFFE2E8F0)),
+        elevation = CardDefaults.cardElevation(defaultElevation = if (isUnread) 3.dp else 1.dp),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Surface(
+                        shape = RoundedCornerShape(6.dp),
+                        color = Color(0xFFEA580C),
+                    ) {
+                        Text(
+                            text = "ADMIN DISPATCH",
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = Color.White,
+                        )
+                    }
+                    if (isUnread) {
+                        Surface(
+                            shape = CircleShape,
+                            color = Color(0xFFEF4444),
+                            modifier = Modifier.size(6.dp),
+                        ) {}
+                    }
+                }
+                Text(
+                    text = notification.createdAt.take(16).replace('T', ' '),
+                    fontSize = 11.sp,
+                    color = Color(0xFF94A3B8),
+                )
+            }
+
+            Text(
+                text = notification.title,
+                fontWeight = FontWeight.Bold,
+                fontSize = 14.sp,
+                color = Color(0xFF0F172A),
+            )
+
+            Text(
+                text = notification.body,
+                fontSize = 13.sp,
+                color = Color(0xFF334155),
+                lineHeight = 18.sp,
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (!notification.complaintId.isNullOrBlank()) {
+                    OutlinedButton(
+                        onClick = { onOpenComplaint(notification.complaintId) },
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFEA580C)),
+                    ) {
+                        Icon(Icons.Default.Assignment, contentDescription = null, modifier = Modifier.size(14.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Open Work Order", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
+                } else {
+                    Spacer(modifier = Modifier.width(1.dp))
+                }
+
+                if (isUnread) {
+                    TextButton(
+                        onClick = onMarkRead,
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                    ) {
+                        Text("Mark as Read", fontSize = 11.sp, color = Color(0xFF64748B))
+                    }
+                }
             }
         }
     }

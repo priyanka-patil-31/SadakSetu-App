@@ -17,7 +17,12 @@ import javax.inject.Inject
 @HiltViewModel
 class WorkOrderViewModel @Inject constructor(
     private val repository: WorkOrderRepository,
+    private val serverConfigStore: com.sadaksetu.core.network.ServerConfigStore,
+    private val api: com.sadaksetu.data.remote.ApiService,
+    private val locationProvider: com.sadaksetu.core.location.LocationProvider,
 ) : ViewModel() {
+
+    val serverUrl: StateFlow<String> = serverConfigStore.serverUrl
 
     private val _workOrdersState = MutableStateFlow<UiState<List<WorkOrder>>>(UiState.Loading)
     val workOrdersState: StateFlow<UiState<List<WorkOrder>>> = _workOrdersState.asStateFlow()
@@ -34,9 +39,40 @@ class WorkOrderViewModel @Inject constructor(
     private val _message = MutableStateFlow<String?>(null)
     val message: StateFlow<String?> = _message.asStateFlow()
 
+    private val _notificationsState = MutableStateFlow<UiState<List<com.sadaksetu.data.remote.model.NotificationDto>>>(UiState.Loading)
+    val notificationsState: StateFlow<UiState<List<com.sadaksetu.data.remote.model.NotificationDto>>> = _notificationsState.asStateFlow()
+
     init {
         loadMyWork()
         loadTeamMembers()
+        loadNotifications()
+        syncLiveLocation()
+    }
+
+    fun loadNotifications() {
+        viewModelScope.launch {
+            runCatching { api.notifications().items }
+                .onSuccess { _notificationsState.value = UiState.Data(it) }
+                .onFailure { _notificationsState.value = UiState.Error(it.message ?: "Failed to load notifications") }
+        }
+    }
+
+    fun markNotificationRead(id: String) {
+        viewModelScope.launch {
+            runCatching { api.markNotificationRead(id) }
+            loadNotifications()
+        }
+    }
+
+    fun syncLiveLocation() {
+        viewModelScope.launch {
+            runCatching {
+                val loc = locationProvider.current()
+                if (loc != null) {
+                    api.updateMyLocation(mapOf("latitude" to loc.latitude, "longitude" to loc.longitude))
+                }
+            }
+        }
     }
 
     fun setFilter(filter: String) {
@@ -48,6 +84,8 @@ class WorkOrderViewModel @Inject constructor(
     }
 
     fun loadMyWork() {
+        syncLiveLocation()
+        loadNotifications()
         viewModelScope.launch {
             _workOrdersState.value = UiState.Loading
             repository.getMyWork().fold(

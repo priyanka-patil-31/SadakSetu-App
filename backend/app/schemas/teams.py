@@ -46,6 +46,14 @@ class TeamAvailabilityUpdate(BaseModel):
     availability: TeamAvailability
 
 
+class TeamLocationUpdate(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    latitude: float = Field(ge=-90.0, le=90.0)
+    longitude: float = Field(ge=-180.0, le=180.0)
+    address: str | None = None
+
+
 class TeamResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True, extra="ignore")
 
@@ -60,6 +68,10 @@ class TeamResponse(BaseModel):
     availability: TeamAvailability
     lead_user_id: UUID | None = None
     has_account: bool = False
+    current_latitude: float | None = None
+    current_longitude: float | None = None
+    last_location_update: datetime | None = None
+    current_location_address: str | None = None
     is_active: bool
     created_at: datetime
     updated_at: datetime

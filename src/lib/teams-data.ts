@@ -14,6 +14,10 @@ export type RepairTeam = {
   updatedAt: string
   hasAccount?: boolean
   leadUserId?: string | null
+  currentLatitude?: number | null
+  currentLongitude?: number | null
+  lastLocationUpdate?: string | null
+  currentLocationAddress?: string | null
 }
 
 export type TeamMember = {

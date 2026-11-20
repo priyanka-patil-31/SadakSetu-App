@@ -12,16 +12,31 @@ VALID_STATUS_TRANSITIONS: dict[ComplaintStatus, set[ComplaintStatus]] = {
         ComplaintStatus.AI_PROCESSING,
         ComplaintStatus.ASSIGNED,
         ComplaintStatus.REJECTED,
+        ComplaintStatus.IN_PROGRESS,
     },
     ComplaintStatus.AI_PROCESSING: {
         ComplaintStatus.UNDER_REVIEW,
         ComplaintStatus.ASSIGNED,
         ComplaintStatus.REJECTED,
     },
-    ComplaintStatus.ASSIGNED: {ComplaintStatus.IN_PROGRESS, ComplaintStatus.REJECTED},
-    ComplaintStatus.IN_PROGRESS: {ComplaintStatus.RESOLVED},
-    ComplaintStatus.RESOLVED: set(),
-    ComplaintStatus.REJECTED: set(),
+    ComplaintStatus.ASSIGNED: {
+        ComplaintStatus.IN_PROGRESS,
+        ComplaintStatus.UNDER_REVIEW,
+        ComplaintStatus.REJECTED,
+    },
+    ComplaintStatus.IN_PROGRESS: {
+        ComplaintStatus.ASSIGNED,
+        ComplaintStatus.RESOLVED,
+        ComplaintStatus.UNDER_REVIEW,
+        ComplaintStatus.REJECTED,
+    },
+    ComplaintStatus.RESOLVED: {
+        ComplaintStatus.UNDER_REVIEW,
+        ComplaintStatus.ASSIGNED,
+    },
+    ComplaintStatus.REJECTED: {
+        ComplaintStatus.UNDER_REVIEW,
+    },
 }
 
 

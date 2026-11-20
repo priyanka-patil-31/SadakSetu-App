@@ -11,7 +11,7 @@ from uuid import UUID
 
 from geoalchemy2 import Geography
 
-from sqlalchemy import JSON, Boolean, CheckConstraint, DateTime, Enum, ForeignKey, Index, Integer, String, Text, text
+from sqlalchemy import JSON, Boolean, CheckConstraint, DateTime, Enum, Float, ForeignKey, Index, Integer, String, Text, text
 
 from sqlalchemy.dialects.postgresql import JSONB
 
@@ -217,6 +217,11 @@ class RepairTeam(TimestampMixin, Base):
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
     )
     lead_user: Mapped[User | None] = relationship(foreign_keys="RepairTeam.lead_user_id")
+
+    current_latitude: Mapped[float | None] = mapped_column(Float, nullable=True)
+    current_longitude: Mapped[float | None] = mapped_column(Float, nullable=True)
+    last_location_update: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    current_location_address: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
 

@@ -168,4 +168,7 @@ interface ApiService {
 
     @POST("api/v1/teams/my-team/members")
     suspend fun createMyTeamMember(@Body body: TeamMemberCreateDto): TeamMemberDto
+
+    @POST("api/v1/teams/my-team/location")
+    suspend fun updateMyLocation(@Body body: Map<String, Double>): Map<String, Any?>
 }

@@ -507,7 +507,7 @@ fun AuthScreen(viewModel: AuthViewModel = hiltViewModel()) {
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         OutlinedButton(
-                            onClick = { inputServerUrl = "http://10.179.117.209:8001/" },
+                            onClick = { inputServerUrl = "http://10.196.27.209:8001/" },
                             modifier = Modifier.weight(1f)
                         ) {
                             Text("Wi-Fi IP", style = MaterialTheme.typography.labelSmall)

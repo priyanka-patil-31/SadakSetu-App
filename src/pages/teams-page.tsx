@@ -1,24 +1,24 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   AlertTriangle,
-  Calendar,
+  Briefcase,
   Check,
   CheckCircle2,
   ChevronRight,
-  Clock,
   Eye,
-  FileText,
   HardHat,
   KeyRound,
   Loader2,
   Mail,
   MapPin,
+  MessageSquare,
+  Navigation,
   Pencil,
   Phone,
   Plus,
   RefreshCw,
   Search,
-  ShieldAlert,
+  Send,
   Trash2,
   UserCheck,
   UserPlus,
@@ -34,11 +34,23 @@ import { Input } from '@/components/ui/input'
 import { type RepairTeam, type TeamAvailability, type TeamMember } from '@/lib/teams-data'
 import { cn, formatDate } from '@/lib/utils'
 import { teamsService } from '@/services/teams-service'
+import { apiClient } from '@/lib/http-client'
 import {
   assignmentsService,
   type WorkOrder,
   type WorkMonitoringStats,
 } from '@/services/assignments-service'
+
+function computeDistanceKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371
+  const dLat = ((lat2 - lat1) * Math.PI) / 180
+  const dLon = ((lon2 - lon1) * Math.PI) / 180
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLon / 2) * Math.sin(dLon / 2)
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+  return Math.round(R * c * 10) / 10
+}
 
 const availabilityClasses: Record<TeamAvailability, string> = {
   Available: 'border-emerald-200 bg-emerald-50 text-emerald-700',
@@ -137,6 +149,26 @@ export function TeamsPage() {
   const [verificationNotes, setVerificationNotes] = useState('')
   const [verificationSaving, setVerificationSaving] = useState(false)
   const [verificationError, setVerificationError] = useState('')
+
+  // Send Direct Message to Lead Modal State
+  const [sendMessageOpen, setSendMessageOpen] = useState(false)
+  const [targetTeam, setTargetTeam] = useState<RepairTeam | null>(null)
+  const [messageText, setMessageText] = useState('')
+  const [messageComplaintId, setMessageComplaintId] = useState('')
+  const [messagePriority, setMessagePriority] = useState('HIGH')
+  const [messageAssignComplaint, setMessageAssignComplaint] = useState(false)
+  const [messageSending, setMessageSending] = useState(false)
+  const [messageSuccess, setMessageSuccess] = useState('')
+  const [messageError, setMessageError] = useState('')
+
+  // Quick Dispatch Work Order Modal State
+  const [quickDispatchOpen, setQuickDispatchOpen] = useState(false)
+  const [availableComplaints, setAvailableComplaints] = useState<any[]>([])
+  const [selectedComplaintId, setSelectedComplaintId] = useState('')
+  const [dispatchInstructions, setDispatchInstructions] = useState('')
+  const [dispatchPriority, setDispatchPriority] = useState('HIGH')
+  const [dispatchSubmitting, setDispatchSubmitting] = useState(false)
+  const [dispatchError, setDispatchError] = useState('')
 
   const selected = teams.find((team) => team.id === selectedId) ?? null
 
@@ -414,7 +446,7 @@ export function TeamsPage() {
     }
   }
 
-  const openAssignLeader = async (team: RepairTeam) => {
+  const openAssignLeader = async (_team?: RepairTeam) => {
     setAssignLeaderError('')
     setSelectedLeaderId('')
     try {
@@ -443,6 +475,93 @@ export function TeamsPage() {
       setAssignLeaderError(err instanceof Error ? err.message : 'Failed to assign team leader.')
     } finally {
       setAssignLeaderSaving(false)
+    }
+  }
+
+  // Message & Dispatch Handlers
+  const openSendMessage = async (team: RepairTeam) => {
+    setTargetTeam(team)
+    setMessageText('')
+    setMessageComplaintId('')
+    setMessagePriority('HIGH')
+    setMessageAssignComplaint(false)
+    setMessageError('')
+    setMessageSuccess('')
+    setSendMessageOpen(true)
+    try {
+      const res = await apiClient.get<any>('/complaints?page=1&page_size=50')
+      const items = res.data?.items || []
+      setAvailableComplaints(items)
+    } catch {
+      // keep existing complaints
+    }
+  }
+
+  const handleSendMessageSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!targetTeam || !messageText.trim()) return
+    setMessageSending(true)
+    setMessageError('')
+    setMessageSuccess('')
+    try {
+      await teamsService.sendMessageToLead(targetTeam.id, {
+        message: messageText.trim(),
+        complaint_id: messageComplaintId || undefined,
+        priority: messagePriority,
+        assign_complaint: messageAssignComplaint && Boolean(messageComplaintId),
+      })
+      setMessageSuccess(`Instructions sent directly to ${targetTeam.lead}!`)
+      if (messageAssignComplaint && messageComplaintId) {
+        loadMonitoringData()
+        const updated = await teamsService.list()
+        setTeams(updated)
+      }
+      setTimeout(() => {
+        setSendMessageOpen(false)
+        setMessageSuccess('')
+      }, 1500)
+    } catch (err) {
+      setMessageError(err instanceof Error ? err.message : 'Failed to send message.')
+    } finally {
+      setMessageSending(false)
+    }
+  }
+
+  const openQuickDispatch = async (team: RepairTeam) => {
+    setTargetTeam(team)
+    setDispatchError('')
+    setSelectedComplaintId('')
+    setDispatchInstructions('')
+    setQuickDispatchOpen(true)
+    try {
+      const res = await apiClient.get<any>('/complaints?page=1&page_size=50')
+      const unassigned = (res.data?.items || []).filter((c: any) => c.status === 'VERIFIED' || c.status === 'REPORTED' || c.status === 'IN_PROGRESS')
+      setAvailableComplaints(unassigned)
+      if (unassigned.length > 0) setSelectedComplaintId(unassigned[0].id)
+    } catch {
+      setAvailableComplaints([])
+    }
+  }
+
+  const handleQuickDispatchSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!targetTeam || !selectedComplaintId) return
+    setDispatchSubmitting(true)
+    setDispatchError('')
+    try {
+      await assignmentsService.assignComplaint(selectedComplaintId, {
+        team_id: targetTeam.id,
+        priority: dispatchPriority,
+        instructions: dispatchInstructions.trim() || undefined,
+      })
+      setQuickDispatchOpen(false)
+      loadMonitoringData()
+      const updatedTeams = await teamsService.list()
+      setTeams(updatedTeams)
+    } catch (err) {
+      setDispatchError(err instanceof Error ? err.message : 'Failed to dispatch work order.')
+    } finally {
+      setDispatchSubmitting(false)
     }
   }
 
@@ -662,11 +781,43 @@ export function TeamsPage() {
                       </div>
                     </button>
 
-                    <div className="flex flex-wrap items-center gap-3 lg:justify-end">
+                    <div className="flex flex-wrap items-center gap-2 lg:justify-end">
                       <AvailabilityBadge availability={team.availability} />
                       <span className="text-xs text-muted-foreground font-medium">
                         {team.assignedComplaints.length} work orders
                       </span>
+                      {team.currentLatitude && team.currentLongitude && (
+                        <span className="flex items-center gap-1 rounded-full bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-700">
+                          <Navigation className="h-3 w-3 animate-pulse text-emerald-600" />
+                          Live GPS
+                        </span>
+                      )}
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8 gap-1.5 text-xs font-semibold text-orange-600 border-orange-200 hover:bg-orange-50"
+                        title="Send Message or Direct Dispatch"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          openSendMessage(team)
+                        }}
+                      >
+                        <MessageSquare className="h-3.5 w-3.5" />
+                        Send Message
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8 gap-1.5 text-xs font-semibold text-blue-600 border-blue-200 hover:bg-blue-50"
+                        title="Assign Work Order to Lead"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          openQuickDispatch(team)
+                        }}
+                      >
+                        <Briefcase className="h-3.5 w-3.5" />
+                        Assign Work
+                      </Button>
                       <Button
                         variant="ghost"
                         size="icon"
@@ -872,7 +1023,7 @@ export function TeamsPage() {
                             {wo.priority}
                           </Badge>
                           {isOverdue && (
-                            <Badge variant="destructive" className="text-[10px] font-bold">
+                            <Badge variant="outline" className="border-red-200 bg-red-50 text-red-700 text-[10px] font-bold">
                               OVERDUE
                             </Badge>
                           )}
@@ -1280,6 +1431,25 @@ export function TeamsPage() {
                     <span className="text-[10px] uppercase font-bold text-slate-400 block">Login Email</span>
                     <span className="font-semibold text-slate-900">{selected.email}</span>
                   </div>
+                  <div className="flex gap-2 pt-1">
+                    <Button
+                      size="sm"
+                      className="flex-1 gap-1.5 bg-orange-500 hover:bg-orange-600 text-white text-xs font-semibold"
+                      onClick={() => openSendMessage(selected)}
+                    >
+                      <MessageSquare className="h-3.5 w-3.5" />
+                      Send Message to Lead
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="flex-1 gap-1.5 border-blue-200 text-blue-700 hover:bg-blue-50 text-xs font-semibold"
+                      onClick={() => openQuickDispatch(selected)}
+                    >
+                      <Briefcase className="h-3.5 w-3.5" />
+                      Assign Work
+                    </Button>
+                  </div>
                 </div>
               ) : (
                 <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-4 space-y-3">
@@ -1316,6 +1486,42 @@ export function TeamsPage() {
                   </div>
                 </div>
               )}
+
+              {/* Workload Stats */}
+              <div className="rounded-xl border bg-slate-50 p-4">
+                <p className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-3">
+                  Live Field Location & Status
+                </p>
+                {selected.currentLatitude && selected.currentLongitude ? (
+                  <div className="space-y-2 rounded-lg bg-white p-3 border border-emerald-200">
+                    <div className="flex items-center justify-between">
+                      <span className="flex items-center gap-1.5 text-xs font-bold text-emerald-800">
+                        <Navigation className="h-3.5 w-3.5 text-emerald-600 animate-pulse" />
+                        Live GPS Signal Active
+                      </span>
+                      <span className="text-[10px] text-muted-foreground font-mono">
+                        {selected.lastLocationUpdate ? new Date(selected.lastLocationUpdate).toLocaleTimeString() : 'Just now'}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-700 font-medium">
+                      {selected.currentLocationAddress || `${selected.currentLatitude.toFixed(6)}, ${selected.currentLongitude.toFixed(6)}`}
+                    </p>
+                    <a
+                      href={`https://maps.google.com/?q=${selected.currentLatitude},${selected.currentLongitude}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 text-[11px] font-semibold text-blue-600 hover:underline"
+                    >
+                      <MapPin className="h-3 w-3" /> View on Google Maps
+                    </a>
+                  </div>
+                ) : (
+                  <div className="rounded-lg bg-white p-3 border border-slate-200 text-xs text-muted-foreground flex items-center gap-2">
+                    <MapPin className="h-4 w-4 text-slate-400" />
+                    <span>No active GPS beacon received yet from field phone.</span>
+                  </div>
+                )}
+              </div>
 
               {/* Workload Stats */}
               <div className="rounded-xl border bg-slate-50 p-4">
@@ -1610,18 +1816,34 @@ export function TeamsPage() {
                   {formError}
                 </p>
               )}
-              <div className="flex justify-end gap-2 sm:col-span-2">
-                <Button variant="ghost" onClick={() => setFormOpen(false)}>
-                  Cancel
-                </Button>
-                <Button
-                  onClick={saveTeam}
-                  disabled={saving}
-                  className="gap-2 bg-orange-500 hover:bg-orange-600"
-                >
-                  <Check className="h-4 w-4" />
-                  {saving ? 'Saving…' : editingId ? 'Save changes' : 'Create team'}
-                </Button>
+              <div className="flex flex-wrap items-center justify-between gap-2 sm:col-span-2 pt-3 border-t">
+                {editingId && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="gap-1.5 border-orange-300 text-orange-600 hover:bg-orange-50 text-xs font-semibold"
+                    onClick={() => {
+                      const t = teams.find((item) => item.id === editingId)
+                      if (t) openSendMessage(t)
+                    }}
+                  >
+                    <MessageSquare className="h-4 w-4" />
+                    Send Message to Lead
+                  </Button>
+                )}
+                <div className="flex items-center gap-2 ml-auto">
+                  <Button variant="ghost" onClick={() => setFormOpen(false)}>
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={saveTeam}
+                    disabled={saving}
+                    className="gap-2 bg-orange-500 hover:bg-orange-600 font-semibold"
+                  >
+                    <Check className="h-4 w-4" />
+                    {saving ? 'Saving…' : editingId ? 'Save changes' : 'Create team'}
+                  </Button>
+                </div>
               </div>
             </div>
           </div>
@@ -1817,6 +2039,347 @@ export function TeamsPage() {
                   className="bg-orange-500 hover:bg-orange-600 text-white font-semibold text-xs"
                 >
                   {assignLeaderSaving ? 'Linking…' : 'Link Leader'}
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Send Message to Lead Modal */}
+      {sendMessageOpen && targetTeam && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4"
+          onClick={() => setSendMessageOpen(false)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Send Direct Message to Lead"
+            className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between border-b pb-4">
+              <div className="flex items-center gap-2.5">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-orange-100 text-orange-600">
+                  <MessageSquare className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900">Direct Message & Dispatch to Lead</h3>
+                  <p className="text-xs text-muted-foreground">
+                    To: {targetTeam.lead} ({targetTeam.name}) · {targetTeam.zone}
+                  </p>
+                </div>
+              </div>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setSendMessageOpen(false)}
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+
+            {/* Field Lead Live Location Status */}
+            <div className="rounded-xl border bg-slate-50 p-3.5 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                  Lead Live GPS Tracking
+                </span>
+                {targetTeam.currentLatitude && targetTeam.currentLongitude ? (
+                  <Badge variant="outline" className="border-emerald-300 bg-emerald-100 text-emerald-800 text-[10px] gap-1">
+                    <Navigation className="h-3 w-3 animate-pulse text-emerald-600" />
+                    Live Signal Active
+                  </Badge>
+                ) : (
+                  <Badge variant="outline" className="border-amber-300 bg-amber-50 text-amber-800 text-[10px]">
+                    Awaiting App GPS
+                  </Badge>
+                )}
+              </div>
+              {targetTeam.currentLatitude && targetTeam.currentLongitude ? (
+                <div className="rounded-lg bg-white p-2.5 border border-emerald-200 text-xs text-slate-700 flex flex-col gap-1">
+                  <p className="font-semibold text-slate-900 flex items-center gap-1.5">
+                    <MapPin className="h-3.5 w-3.5 text-emerald-600" />
+                    {targetTeam.currentLocationAddress || `${targetTeam.currentLatitude.toFixed(6)}, ${targetTeam.currentLongitude.toFixed(6)}`}
+                  </p>
+                  <div className="flex items-center justify-between pt-1">
+                    <span className="text-[10px] text-muted-foreground">
+                      Updated: {targetTeam.lastLocationUpdate ? new Date(targetTeam.lastLocationUpdate).toLocaleTimeString() : 'Recently'}
+                    </span>
+                    <a
+                      href={`https://maps.google.com/?q=${targetTeam.currentLatitude},${targetTeam.currentLongitude}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-[11px] font-semibold text-blue-600 hover:underline inline-flex items-center gap-1"
+                    >
+                      Open on Google Maps &rarr;
+                    </a>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground bg-white p-2.5 rounded-lg border border-slate-200">
+                  Lead mobile device has not synced GPS beacon yet. Location will appear as soon as the lead logs in or opens the SadakSetu Android app.
+                </p>
+              )}
+            </div>
+
+            <form onSubmit={handleSendMessageSubmit} className="space-y-4">
+              {/* Complaint Selector */}
+              <div>
+                <label className="text-xs font-bold uppercase text-slate-700 block mb-1.5">
+                  Link Complaint / Road Issue (Recommended)
+                </label>
+                <select
+                  value={messageComplaintId}
+                  onChange={(e) => {
+                    setMessageComplaintId(e.target.value)
+                    if (e.target.value) setMessageAssignComplaint(true)
+                  }}
+                  className="h-10 w-full rounded-lg border border-input bg-background px-3 text-xs outline-none"
+                >
+                  <option value="">-- No specific complaint (General Message) --</option>
+                  {availableComplaints.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      #{c.complaint_number || c.id.slice(0, 8)} - {c.title} ({c.status})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Selected Complaint Details & Proximity */}
+              {messageComplaintId && (() => {
+                const cmp = availableComplaints.find((c) => c.id === messageComplaintId)
+                if (!cmp) return null
+                const dist =
+                  targetTeam.currentLatitude && targetTeam.currentLongitude && cmp.latitude && cmp.longitude
+                    ? computeDistanceKm(targetTeam.currentLatitude, targetTeam.currentLongitude, cmp.latitude, cmp.longitude)
+                    : null
+                return (
+                  <div className="rounded-xl border border-blue-200 bg-blue-50/60 p-3 text-xs space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-blue-900">
+                        #{cmp.complaint_number || cmp.id.slice(0, 8)} - {cmp.title}
+                      </span>
+                      <Badge variant="outline" className="border-blue-300 bg-blue-100 text-blue-800 text-[10px]">
+                        {cmp.status}
+                      </Badge>
+                    </div>
+                    <p className="text-slate-600 flex items-center gap-1">
+                      <MapPin className="h-3 w-3 text-slate-400" />
+                      {cmp.address || `${cmp.latitude}, ${cmp.longitude}`}
+                    </p>
+                    {dist !== null && (
+                      <p className="font-semibold text-emerald-800 text-[11px] flex items-center gap-1">
+                        <Navigation className="h-3 w-3 text-emerald-600" />
+                        Lead is approximately <strong>{dist} km</strong> away from this repair site.
+                      </p>
+                    )}
+                    <div className="pt-2 border-t border-blue-200/80 flex items-center justify-between">
+                      <label className="flex items-center gap-2 cursor-pointer font-semibold text-slate-800">
+                        <input
+                          type="checkbox"
+                          checked={messageAssignComplaint}
+                          onChange={(e) => setMessageAssignComplaint(e.target.checked)}
+                          className="h-4 w-4 rounded border-slate-300 text-orange-600 focus:ring-orange-500"
+                        />
+                        Assign this work order to {targetTeam.lead} now
+                      </label>
+                      {messageAssignComplaint && (
+                        <select
+                          value={messagePriority}
+                          onChange={(e) => setMessagePriority(e.target.value)}
+                          className="h-7 rounded border border-input bg-white px-2 text-[11px] font-semibold"
+                        >
+                          <option value="CRITICAL">CRITICAL</option>
+                          <option value="HIGH">HIGH Priority</option>
+                          <option value="MEDIUM">MEDIUM</option>
+                          <option value="LOW">LOW</option>
+                        </select>
+                      )}
+                    </div>
+                  </div>
+                )
+              })()}
+
+              {/* Message Input & Quick Templates */}
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-xs font-bold uppercase text-slate-700">
+                    Message / Dispatch Instructions
+                  </label>
+                  <span className="text-[10px] text-muted-foreground">Sent directly to lead's mobile app</span>
+                </div>
+                <textarea
+                  value={messageText}
+                  onChange={(e) => setMessageText(e.target.value)}
+                  placeholder="e.g. Please expedite pothole repair at Station Road, materials are delivered on site. Capture before-photos first."
+                  className="w-full h-24 rounded-lg border border-input p-3 text-sm outline-none resize-none focus:ring-2 focus:ring-orange-500"
+                  required
+                />
+                {/* Quick Suggestion Chips */}
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {[
+                    'Immediate repair required on site',
+                    'Asphalt & equipment delivered, proceed with patching',
+                    'Inspect pothole dimensions and upload before-photos',
+                    'High traffic road; please complete repair before rush hour',
+                  ].map((chip) => (
+                    <button
+                      key={chip}
+                      type="button"
+                      onClick={() => setMessageText((prev) => (prev ? `${prev} ${chip}.` : `${chip}.`))}
+                      className="rounded-full bg-slate-100 hover:bg-orange-50 hover:text-orange-700 hover:border-orange-200 border border-slate-200 px-2.5 py-1 text-[11px] text-slate-600 transition-colors cursor-pointer"
+                    >
+                      + {chip}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {messageError && (
+                <p className="text-xs font-medium text-red-700 bg-red-50 p-2.5 rounded-lg">
+                  {messageError}
+                </p>
+              )}
+
+              {messageSuccess && (
+                <p className="text-xs font-medium text-emerald-700 bg-emerald-50 p-2.5 rounded-lg flex items-center gap-1.5">
+                  <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                  {messageSuccess}
+                </p>
+              )}
+
+              <div className="flex justify-end gap-2 pt-2 border-t">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setSendMessageOpen(false)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={messageSending || !messageText.trim()}
+                  className="bg-orange-500 hover:bg-orange-600 text-white font-semibold text-xs gap-1.5"
+                >
+                  {messageSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                  {messageSending ? 'Sending…' : messageAssignComplaint && messageComplaintId ? 'Send Message & Dispatch' : 'Send Message to Lead'}
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Quick Assign Work Modal */}
+      {quickDispatchOpen && targetTeam && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4"
+          onClick={() => setQuickDispatchOpen(false)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Assign Work to Team"
+            className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between border-b pb-4">
+              <div className="flex items-center gap-2.5">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-100 text-blue-600">
+                  <Briefcase className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900">Assign Work Order to Lead</h3>
+                  <p className="text-xs text-muted-foreground">
+                    Assigning to: {targetTeam.name} (Lead: {targetTeam.lead})
+                  </p>
+                </div>
+              </div>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setQuickDispatchOpen(false)}
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+
+            <form onSubmit={handleQuickDispatchSubmit} className="space-y-4">
+              <div>
+                <label className="text-xs font-bold uppercase text-slate-700 block mb-1.5">
+                  Select Complaint / Road Issue
+                </label>
+                {availableComplaints.length === 0 ? (
+                  <p className="rounded-lg bg-slate-50 p-3 text-xs text-muted-foreground">
+                    No open or unassigned complaints available.
+                  </p>
+                ) : (
+                  <select
+                    value={selectedComplaintId}
+                    onChange={(e) => setSelectedComplaintId(e.target.value)}
+                    className="h-10 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none"
+                    required
+                  >
+                    {availableComplaints.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        #{c.complaint_number || c.id.slice(0, 8)} - {c.title} ({c.status})
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+
+              <div>
+                <label className="text-xs font-bold uppercase text-slate-700 block mb-1.5">
+                  Priority Level
+                </label>
+                <select
+                  value={dispatchPriority}
+                  onChange={(e) => setDispatchPriority(e.target.value)}
+                  className="h-10 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none"
+                >
+                  <option value="CRITICAL">CRITICAL (Immediate)</option>
+                  <option value="HIGH">HIGH (Within 24 Hours)</option>
+                  <option value="MEDIUM">MEDIUM (Standard Repair)</option>
+                  <option value="LOW">LOW (Scheduled Maintenance)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="text-xs font-bold uppercase text-slate-700 block mb-1.5">
+                  Specific Repair Instructions (Optional)
+                </label>
+                <textarea
+                  value={dispatchInstructions}
+                  onChange={(e) => setDispatchInstructions(e.target.value)}
+                  placeholder="e.g. Inspect drainage block, use rapid setting cold mix asphalt."
+                  className="w-full h-20 rounded-lg border border-input p-3 text-sm outline-none resize-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              {dispatchError && (
+                <p className="text-xs font-medium text-red-700 bg-red-50 p-2.5 rounded-lg">
+                  {dispatchError}
+                </p>
+              )}
+
+              <div className="flex justify-end gap-2 pt-2 border-t">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setQuickDispatchOpen(false)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={dispatchSubmitting || availableComplaints.length === 0}
+                  className="bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs gap-1.5"
+                >
+                  {dispatchSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                  {dispatchSubmitting ? 'Dispatching…' : 'Dispatch Work Order'}
                 </Button>
               </div>
             </form>

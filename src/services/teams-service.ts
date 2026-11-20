@@ -14,6 +14,10 @@ type BackendTeam = {
   availability: BackendAvailability
   lead_user_id?: string | null
   has_account?: boolean
+  current_latitude?: number | null
+  current_longitude?: number | null
+  last_location_update?: string | null
+  current_location_address?: string | null
   is_active: boolean
   created_at: string
   updated_at: string
@@ -40,6 +44,10 @@ function mapTeam(team: BackendTeam, assignedComplaints: string[] = []): RepairTe
     updatedAt: new Date(team.updated_at).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }),
     hasAccount: team.has_account ?? !!team.lead_user_id,
     leadUserId: team.lead_user_id ?? null,
+    currentLatitude: team.current_latitude ?? null,
+    currentLongitude: team.current_longitude ?? null,
+    lastLocationUpdate: team.last_location_update ?? null,
+    currentLocationAddress: team.current_location_address ?? null,
   }
 }
 
@@ -106,6 +114,11 @@ export const teamsService = {
 
   async listAvailableLeaders(): Promise<{ id: string; email: string; full_name: string; phone: string | null; is_active: boolean }[]> {
     const response = await apiClient.get<{ id: string; email: string; full_name: string; phone: string | null; is_active: boolean }[]>('/teams/available-leaders')
+    return response.data
+  },
+
+  async sendMessageToLead(teamId: string, payload: { message: string; priority?: string; complaint_id?: string; assign_complaint?: boolean }) {
+    const response = await apiClient.post<{ message: string; team_id: string; lead?: string; assigned?: boolean }>(`/teams/${encodeURIComponent(teamId)}/send-message`, payload)
     return response.data
   },
 

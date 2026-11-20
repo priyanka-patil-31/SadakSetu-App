@@ -1,1 +1,0 @@
-"""SadakSetu backend application package."""

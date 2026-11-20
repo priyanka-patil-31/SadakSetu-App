@@ -39,8 +39,9 @@ class HostFallbackInterceptor @Inject constructor(
         }
 
         // 2. Active Wi-Fi LAN IP & USB reverse
-        list.add("10.179.117.209" to 8001)
+        list.add("10.196.27.209" to 8001)
         list.add("127.0.0.1" to 8001)
+        list.add("10.179.117.209" to 8001)
 
         // 3. Dynamically discover .209 or .1 on the device's current Wi-Fi subnet
         serverConfigStore.getLocalWifiIp()?.let { localIp ->

@@ -26,7 +26,9 @@ from app.schemas.teams import (
     TeamUpdate,
     TeamWorkStatsResponse,
 )
+from app.schemas.teams import TeamLocationUpdate
 from app.services.auth import AuthenticatedSession, normalize_email, require_roles
+from app.services.notifications import create_notification
 
 router = APIRouter(prefix="/teams", tags=["repair-teams"])
 
@@ -526,3 +528,100 @@ def update_team_member(
         db.rollback()
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Employee ID already exists") from exc
     return member
+
+
+@router.post("/my-team/location", response_model=TeamResponse)
+def update_my_team_location(
+    payload: TeamLocationUpdate,
+    auth: AuthenticatedSession = Depends(require_roles(UserRole.REPAIR_TEAM, UserRole.ADMIN)),
+    db: DBSession = Depends(get_db),
+) -> TeamResponse:
+    team = _resolve_or_create_user_team(db, auth.user)
+    team.current_latitude = payload.latitude
+    team.current_longitude = payload.longitude
+    team.last_location_update = func.now()
+    if payload.address:
+        team.current_location_address = payload.address.strip()
+    db.commit()
+    db.refresh(team)
+    return _enrich_team(db, team)
+
+
+@router.post("/{team_id}/send-message")
+def send_message_to_lead(
+    team_id: UUID,
+    payload: dict,
+    auth: AuthenticatedSession = Depends(require_roles(UserRole.ADMIN)),
+    db: DBSession = Depends(get_db),
+) -> dict:
+    team = _get_team(db, team_id)
+    message_text = str(payload.get("message") or "").strip()
+    if not message_text:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Message cannot be empty")
+    
+    complaint_id_raw = payload.get("complaint_id")
+    complaint_id = None
+    complaint_obj = None
+    if complaint_id_raw:
+        try:
+            complaint_id = UUID(str(complaint_id_raw))
+            complaint_obj = db.get(Complaint, complaint_id)
+        except ValueError:
+            pass
+
+    assign_now = payload.get("assign_complaint", False)
+    if assign_now and complaint_id and complaint_obj:
+        from app.services.assignments import assign_complaint
+        try:
+            assign_complaint(
+                db=db,
+                complaint_id=complaint_id,
+                team_id=team.id,
+                actor_id=auth.user.id,
+                priority=str(payload.get("priority") or "HIGH"),
+                instructions=message_text,
+            )
+        except Exception:
+            pass
+
+    target_user_ids: list[UUID] = []
+    if team.lead_user_id:
+        target_user_ids.append(team.lead_user_id)
+    if team.email:
+        u = db.scalar(select(User).where(func.lower(User.email) == team.email.strip().lower(), User.is_active.is_(True)))
+        if u and u.id not in target_user_ids:
+            target_user_ids.append(u.id)
+
+    if not target_user_ids:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Team Leader user account not found for this team. Please create an account for this leader first.")
+
+    notification_title = "Direct Dispatch Instructions - Admin"
+    formatted_body = message_text
+
+    if complaint_obj:
+        c_num = complaint_obj.complaint_number or str(complaint_obj.id)[:8]
+        notification_title = f"Dispatch: #{c_num} - {complaint_obj.title[:30]}"
+        loc_str = ""
+        if getattr(complaint_obj, "location", None):
+            loc_str = complaint_obj.location.address or f"{complaint_obj.location.latitude:.5f}, {complaint_obj.location.longitude:.5f}"
+        formatted_body = f"{message_text}\n\n[Location: {loc_str}]" if loc_str else message_text
+        if team.current_latitude and team.current_longitude:
+            formatted_body += f"\n[Lead GPS: {team.current_latitude:.5f}, {team.current_longitude:.5f}]"
+
+    for uid in target_user_ids:
+        create_notification(
+            db=db,
+            user_id=uid,
+            notification_type="ADMIN_DIRECT_MESSAGE",
+            title=notification_title,
+            body=formatted_body,
+            complaint_id=complaint_id,
+            team_id=team.id,
+        )
+    db.commit()
+    return {
+        "message": "Message sent to team lead successfully",
+        "team_id": str(team.id),
+        "lead": team.lead_name,
+        "assigned": bool(assign_now),
+    }
